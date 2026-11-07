@@ -1,0 +1,152 @@
+// ==============================================================================
+// RESPONSIBLE MEMBER: Member A (Team Leader & System Architect)
+// FEATURE: Database Schema & Entity Relational Models
+//
+// TODO: [Member A]
+// 1. Maintain model invariants: ensure Decision snapshots are strictly immutable.
+// 2. Add indexing on `reviewDate`, `status`, and `projectId` for query optimization.
+// 3. Keep schema synchronized with `decision-replay-docs/architecture/02-database-schema.md`.
+// ==============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite" // Can be switched to "postgresql" for production
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  name      String
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  projects  Project[]
+  decisions Decision[]
+}
+
+model Project {
+  id             String     @id @default(cuid())
+  name           String
+  purpose        String
+  desiredOutcome String
+  status         String     @default("ACTIVE") // ACTIVE, ARCHIVED, COMPLETED
+  horizon        String     @default("MEDIUM_TERM")
+  constraints    String     @default("[]")
+  principles     String     @default("[]")
+  userId         String?
+  user           User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  decisions      Decision[]
+}
+
+model Decision {
+  id              String          @id @default(cuid())
+  title           String
+  category        String          @default("GENERAL")
+  projectId       String?
+  project         Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  userId          String?
+  user            User?           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  context         String
+  decisionReason  String          @default("")
+  beliefRationale String          @default("")
+  choice          String
+  expectedOutcome String
+  confidence      Int             @default(50) // 1 - 100
+  
+  status          String          @default("LOCKED") // DRAFT, LOCKED, REVIEW_PENDING, REPLAYED, ARCHIVED
+  reviewDate      DateTime?
+  lockedAt        DateTime?       @default(now())
+  snapshotHash    String?
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  snapshot        Snapshot?
+  alternatives    Alternative[]
+  assumptions     Assumption[]
+  preMortems      PreMortem[]
+  events          TimelineEvent[]
+  outcome         Outcome?
+  analyses        Analysis[]
+}
+
+model Snapshot {
+  id          String   @id @default(cuid())
+  decisionId  String   @unique
+  decision    Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  contentHash String
+  payloadJson String   // Canonical JSON of initial beliefs, alternatives & assumptions
+  lockedAt    DateTime @default(now())
+}
+
+model Assumption {
+  id           String    @id @default(cuid())
+  statement    String
+  metricTarget String?   // e.g. "< 2 weeks", "$500"
+  metricActual String?   // filled at review time
+  confidence   Int       @default(50)
+  validated    Boolean?  // null = pending, true = validated, false = failed
+  decisionId   String
+  decision     Decision  @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now())
+}
+
+model Alternative {
+  id         String   @id @default(cuid())
+  title      String
+  pros       String   @default("")
+  cons       String   @default("")
+  selected   Boolean  @default(false)
+  decisionId String
+  decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+}
+
+model PreMortem {
+  id               String   @id @default(cuid())
+  failureScenario  String
+  preventiveAction String   @default("")
+  severityScore    Int      @default(50) // 1 - 100
+  occurredInReality Boolean? // verified during replay
+  decisionId       String
+  decision         Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+}
+
+model TimelineEvent {
+  id           String   @id @default(cuid())
+  eventType    String   @default("EVIDENCE_NOTE") // EVIDENCE_NOTE, CONTEXT_SHIFT, BLOCKER_LOG
+  title        String
+  detail       String
+  metadataJson String?  @default("{}")
+  decisionId   String
+  decision     Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  createdAt    DateTime @default(now())
+}
+
+model Outcome {
+  id                 String   @id @default(cuid())
+  actualOutcome      String
+  outcomeScore       Int      @default(50) // 0 - 100 rating of result quality
+  predictionAccuracy Int?     // 0 - 100 calculated prediction accuracy
+  reflection         String
+  wouldRepeat        Boolean  @default(true)
+  unexpectedFactors  String   @default("")
+  recordedAt         DateTime @default(now())
+  decisionId         String   @unique
+  decision           Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+}
+
+model Analysis {
+  id         String   @id @default(cuid())
+  content    String
+  mode       String   @default("LOCAL_MOCK") // LOCAL_MOCK or LIVE_LLM
+  promptType String   @default("SOCRATIC_CHALLENGER") // SOCRATIC_CHALLENGER or POST_REPLAY
+  decisionId String
+  decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+}
