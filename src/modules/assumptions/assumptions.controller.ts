@@ -2,8 +2,9 @@
 // RESPONSIBLE MEMBER: Member C (Backend Lead - Replay & DNA) & Member A
 // FEATURE: Assumptions HTTP Controller
 //
-// TODO: [Member C]
-// 1. Expose PATCH /api/v1/assumptions/:id/validate to update hypothesis outcome.
+// PATCH /api/v1/assumptions/:id/validate
+// Body: { metricActual?: string, validated?: boolean }  (at least one is required;
+// the service returns 422 if both are missing)
 // ==============================================================================
 
 import { Router, Request, Response, NextFunction } from "express";
@@ -15,7 +16,7 @@ export const assumptionsRouter = Router();
 
 const ValidateAssumptionSchema = z.object({
   metricActual: z.string().optional(),
-  validated: z.boolean(),
+  validated: z.boolean().optional(), // omitted => compared automatically with metricTarget
 });
 
 // PATCH /api/v1/assumptions/:id/validate

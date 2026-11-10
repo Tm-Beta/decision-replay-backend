@@ -78,8 +78,11 @@ export class ReplayService {
     const assumptionResults = decision.assumptions.map((a) => {
       const sent = assumptionEvals.find((e) => e.assumptionId === a.id);
       const metricActual = sent?.metricActual ?? a.metricActual ?? null;
-      const validated: boolean | null =
-        sent?.validated ?? evaluateAssumption(a.metricTarget, metricActual);
+            const validated: boolean | null =
+        sent?.validated ??
+        (sent?.metricActual ? evaluateAssumption(a.metricTarget, sent.metricActual) : null) ??
+        a.validated ??
+        evaluateAssumption(a.metricTarget, a.metricActual);
       return { id: a.id, metricActual, validated };
     });
 
