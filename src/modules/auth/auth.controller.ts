@@ -12,21 +12,16 @@ authRouter.post("/google", async (req: Request, res: Response, next: NextFunctio
   try {
     let { email, name, avatar, googleId, credential } = req.body;
 
-    // Decode official Google Identity Services (GSI) credential JWT if provided
+    // Decode and verify official Google Identity Services (GSI) credential JWT if provided
     if (credential && typeof credential === "string") {
       try {
-        const parts = credential.split(".");
-        if (parts.length >= 2) {
-          const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8"));
-          if (payload.email) {
-            email = payload.email;
-            name = payload.name || name || email.split("@")[0];
-            avatar = payload.picture || avatar;
-            googleId = payload.sub || googleId;
-          }
-        }
+        const verified = await authService.verifyGoogleToken(credential);
+        email = verified.email;
+        name = verified.name;
+        avatar = verified.avatar;
+        googleId = verified.googleId;
       } catch (decodeErr) {
-        console.warn("Failed to decode Google JWT payload, falling back to body fields:", decodeErr);
+        console.warn("Failed to verify Google JWT token, checking body fields:", decodeErr);
       }
     }
 
