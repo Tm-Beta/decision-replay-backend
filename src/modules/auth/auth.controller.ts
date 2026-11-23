@@ -74,3 +74,4 @@ authRouter.get("/me", async (req: AuthenticatedRequest, res: Response, next: Nex
     next(error);
   }
 });
+

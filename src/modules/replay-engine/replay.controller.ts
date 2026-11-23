@@ -8,10 +8,11 @@
 // 3. Expose GET /api/v1/replay/patterns/summary for pattern aggregate stats.
 // ==============================================================================
 
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, Response, NextFunction } from "express";
 import { replayService } from "./replay.service";
 import { RecordOutcomeSchema } from "./outcome.dto";
 import { validateBody } from "../../common/guards/validation.guard";
+import { AuthenticatedRequest } from "../../common/guards/auth.guard";
 
 export const replayRouter = Router();
 
@@ -19,7 +20,7 @@ export const replayRouter = Router();
 replayRouter.post(
   "/:decisionId/outcome",
   validateBody(RecordOutcomeSchema),
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
       const result = await replayService.recordOutcome(req.params.decisionId, req.body);
       res.status(201).json(result);
@@ -30,9 +31,9 @@ replayRouter.post(
 );
 
 // GET /api/v1/replay/patterns/summary - Pattern summary across historical decisions
-replayRouter.get("/patterns/summary", async (_req: Request, res: Response, next: NextFunction) => {
+replayRouter.get("/patterns/summary", async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const summary = await replayService.getPatternSummary();
+    const summary = await replayService.getPatternSummary(req.userId);
     res.json(summary);
   } catch (error) {
     next(error);
@@ -40,7 +41,7 @@ replayRouter.get("/patterns/summary", async (_req: Request, res: Response, next:
 });
 
 // GET /api/v1/replay/:decisionId - Side-by-side comparison between snapshot and reality
-replayRouter.get("/:decisionId", async (req: Request, res: Response, next: NextFunction) => {
+replayRouter.get("/:decisionId", async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const comparison = await replayService.getReplayComparison(req.params.decisionId);
     if (!comparison) {

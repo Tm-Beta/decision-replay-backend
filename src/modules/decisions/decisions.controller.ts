@@ -7,11 +7,12 @@
 // 2. Enforce response codes according to `decision-replay-docs/api-contracts/decisions-api.md`.
 // ==============================================================================
 
-import { Router, Request, Response, NextFunction } from "express";
+import { Router, Response, NextFunction } from "express";
 import { decisionsService } from "./decisions.service";
 import { CreateDecisionSchema } from "./dto/create-decision.dto";
 import { AppendTimelineSchema } from "./dto/append-timeline.dto";
 import { validateBody } from "../../common/guards/validation.guard";
+import { AuthenticatedRequest } from "../../common/guards/auth.guard";
 
 export const decisionsRouter = Router();
 
@@ -19,9 +20,9 @@ export const decisionsRouter = Router();
 decisionsRouter.post(
   "/",
   validateBody(CreateDecisionSchema),
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const decision = await decisionsService.createDecision(req.body);
+      const decision = await decisionsService.createDecision(req.body, req.userId);
       res.status(201).json(decision);
     } catch (error) {
       next(error);
@@ -29,14 +30,15 @@ decisionsRouter.post(
   }
 );
 
-// GET /api/v1/decisions - List decisions with query filters
-decisionsRouter.get("/", async (req: Request, res: Response, next: NextFunction) => {
+// GET /api/v1/decisions - List decisions with query filters scoped to authenticated user
+decisionsRouter.get("/", async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { status, projectId, category } = req.query;
     const decisions = await decisionsService.listDecisions({
       status: status as string | undefined,
       projectId: projectId as string | undefined,
       category: category as string | undefined,
+      userId: req.userId,
     });
     res.json({ data: decisions, total: decisions.length });
   } catch (error) {
@@ -45,9 +47,9 @@ decisionsRouter.get("/", async (req: Request, res: Response, next: NextFunction)
 });
 
 // GET /api/v1/decisions/:id - Get frozen snapshot by ID
-decisionsRouter.get("/:id", async (req: Request, res: Response, next: NextFunction) => {
+decisionsRouter.get("/:id", async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const decision = await decisionsService.getDecisionById(req.params.id);
+    const decision = await decisionsService.getDecisionById(req.params.id, req.userId);
     if (!decision) {
       res.status(404).json({ statusCode: 404, message: "Decision not found" });
       return;
@@ -62,9 +64,9 @@ decisionsRouter.get("/:id", async (req: Request, res: Response, next: NextFuncti
 decisionsRouter.post(
   "/:id/events",
   validateBody(AppendTimelineSchema),
-  async (req: Request, res: Response, next: NextFunction) => {
+  async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const event = await decisionsService.appendTimelineEvent(req.params.id, req.body);
+      const event = await decisionsService.appendTimelineEvent(req.params.id, req.body, req.userId);
       res.status(201).json(event);
     } catch (error) {
       next(error);
