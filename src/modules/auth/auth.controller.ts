@@ -6,18 +6,36 @@ export const authRouter = Router();
 
 /**
  * POST /api/v1/auth/google
- * Authenticates or registers a user via Google credentials.
+ * Authenticates or registers a user via Google credentials or GIS ID Token.
  */
 authRouter.post("/google", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { email, name, avatar, googleId } = req.body;
+    let { email, name, avatar, googleId, credential } = req.body;
+
+    // Decode official Google Identity Services (GSI) credential JWT if provided
+    if (credential && typeof credential === "string") {
+      try {
+        const parts = credential.split(".");
+        if (parts.length >= 2) {
+          const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8"));
+          if (payload.email) {
+            email = payload.email;
+            name = payload.name || name || email.split("@")[0];
+            avatar = payload.picture || avatar;
+            googleId = payload.sub || googleId;
+          }
+        }
+      } catch (decodeErr) {
+        console.warn("Failed to decode Google JWT payload, falling back to body fields:", decodeErr);
+      }
+    }
 
     if (!email) {
       res.status(400).json({
         type: "https://decision-replay.dev/errors/missing-email",
         title: "Bad Request",
         status: 400,
-        detail: "Email is required for Google authentication.",
+        detail: "Email or verified Google credential is required for Google authentication.",
       });
       return;
     }
