@@ -23,6 +23,7 @@ import { assumptionsRouter } from "./modules/assumptions/assumptions.controller"
 import { replayRouter } from "./modules/replay-engine/replay.controller";
 import { dnaRouter } from "./modules/dna-engine/dna.controller";
 import { aiRouter } from "./modules/ai-analyst/ai.controller";
+import { authRouter } from "./modules/auth/auth.controller";
 
 const app: Express = express();
 const port = process.env.PORT || 4000;
@@ -47,6 +48,7 @@ app.get("/health", (_req: Request, res: Response) => {
 });
 
 // Mount API routes
+app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/decisions", authGuard, decisionsRouter);
 app.use("/api/v1/assumptions", authGuard, assumptionsRouter);
 app.use("/api/v1/replay", authGuard, replayRouter);
