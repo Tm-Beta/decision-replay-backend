@@ -94,9 +94,12 @@ export class DecisionsService {
   /**
    * Retrieves a decision by ID including snapshot verification and relational timeline.
    */
-  public async getDecisionById(id: string) {
-    const decision = await prisma.decision.findUnique({
-      where: { id },
+  public async getDecisionById(id: string, userId?: string) {
+    const decision = await prisma.decision.findFirst({
+      where: {
+        id,
+        ...(userId ? { userId } : {}),
+      },
       include: {
         snapshot: true,
         assumptions: true,
@@ -130,8 +133,13 @@ export class DecisionsService {
   /**
    * Appends an auditable event to the decision timeline without altering original fields.
    */
-  public async appendTimelineEvent(decisionId: string, dto: AppendTimelineDto) {
-    const decision = await prisma.decision.findUnique({ where: { id: decisionId } });
+  public async appendTimelineEvent(decisionId: string, dto: AppendTimelineDto, userId?: string) {
+    const decision = await prisma.decision.findFirst({
+      where: {
+        id: decisionId,
+        ...(userId ? { userId } : {}),
+      },
+    });
     if (!decision) {
       throw new Error(`Decision ${decisionId} not found`);
     }
@@ -148,14 +156,20 @@ export class DecisionsService {
   }
 
   /**
-   * Lists decisions with filtering by status and project.
+   * Lists decisions with filtering by status, project, and user.
    */
-  public async listDecisions(filters: { status?: string; projectId?: string; category?: string }) {
+  public async listDecisions(filters: {
+    status?: string;
+    projectId?: string;
+    category?: string;
+    userId?: string;
+  }) {
     return await prisma.decision.findMany({
       where: {
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.projectId ? { projectId: filters.projectId } : {}),
         ...(filters.category ? { category: filters.category } : {}),
+        ...(filters.userId ? { userId: filters.userId } : {}),
       },
       include: {
         outcome: true,

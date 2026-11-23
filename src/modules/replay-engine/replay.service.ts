@@ -218,12 +218,11 @@ export class ReplayService {
   }
 
   /**
-   * Aggregates cognitive pattern summaries across all completed replays.
-   * TODO: replace with the real pattern detectors in dna-engine (dna.service.ts).
-   * Left unchanged for now so the existing API keeps working.
+   * Aggregates cognitive pattern summaries across all completed replays for the user.
    */
-  public async getPatternSummary() {
+  public async getPatternSummary(userId?: string) {
     const outcomes = await prisma.outcome.findMany({
+      where: userId ? { decision: { userId } } : {},
       include: {
         decision: {
           include: { assumptions: true, preMortems: true },
