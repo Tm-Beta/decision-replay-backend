@@ -2,6 +2,8 @@
   "name": "decision-replay-backend",
   "version": "1.0.0",
   "description": "Backend services, Replay Engine, Decision DNA, and AI Analyst for Decision Replay",
+  "author": "Tm-Beta <https://github.com/Tm-Beta>",
+  "homepage": "https://github.com/Tm-Beta/decision-replay-backend",
   "main": "dist/main.js",
   "scripts": {
     "dev": "tsx watch src/main.ts",
