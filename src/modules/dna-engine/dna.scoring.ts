@@ -13,9 +13,9 @@ const CALIBRATION_BIAS_PER_DECISION = 0.15;
 export interface DnaDecisionInput {
   id: string;
   title: string;
-  confidence: number; // 1-100, stated before the decision was locked
+  confidence: number | null; // 1-100, stated before the decision was locked
   outcome: {
-    outcomeScore: number; // 0-100
+    outcomeScore: number | null; // 0-100
     predictionAccuracy: number | null;
     unexpectedFactors: string;
   };
@@ -120,8 +120,10 @@ export function computeDnaProfile(decisions: DnaDecisionInput[]): DnaProfile {
   // ---- 1. Confidence Calibration (2.1) ----
   let calibration: number | null = null;
   const calibrationEvidence: DnaEvidence[] = [];
-  if (n > 0) {
-    const terms = decisions.map((d) => ({
+  const rated = decisions.filter((d): d is DnaDecisionInput & {confidence:number; outcome:{outcomeScore:number}} => d.confidence !== null && d.outcome.outcomeScore !== null);
+  if (rated.length > 0) {
+    const n = rated.length;
+    const terms = rated.map((d) => ({
       d,
       c: d.confidence / 100,
       r: d.outcome.outcomeScore / 100,
@@ -158,27 +160,24 @@ export function computeDnaProfile(decisions: DnaDecisionInput[]): DnaProfile {
   }
 
   // ---- 2. Prediction Accuracy (2.2) ----
-  const predictionEvidence: DnaEvidence[] = decisions.map((d) => ({
-    decisionId: d.id,
-    title: d.title,
-    note: `Prediction accuracy ${d.outcome.predictionAccuracy ?? d.outcome.outcomeScore}%`,
-  }));
-  const predictionAccuracy =
-    n > 0 ? mean(decisions.map((d) => d.outcome.predictionAccuracy ?? d.outcome.outcomeScore)) : null;
+  const measured = decisions.flatMap(d => d.outcome.predictionAccuracy === null ? [] : [{d, value:d.outcome.predictionAccuracy}]);
+  const predictionEvidence = measured.map(({d,value}) => ({decisionId:d.id,title:d.title,note:`Verified targets met: ${value}%`}));
+  const predictionAccuracy = measured.length ? mean(measured.map(m=>m.value)) : null;
 
   // ---- 3. Assumption Rigor ----
   const rigorEvidence: DnaEvidence[] = [];
   let totalAssumptions = 0;
   let validatedAssumptions = 0;
   for (const d of decisions) {
-    if (d.assumptions.length === 0) continue;
+    const assessed = d.assumptions.filter(a=>a.validated!==null);
+    if (!assessed.length) continue;
     const ok = d.assumptions.filter((a) => a.validated === true).length;
-    totalAssumptions += d.assumptions.length;
+    totalAssumptions += assessed.length;
     validatedAssumptions += ok;
     rigorEvidence.push({
       decisionId: d.id,
       title: d.title,
-      note: `${ok} of ${d.assumptions.length} assumptions validated`,
+      note: `${ok} of ${assessed.length} assessed assumptions validated`,
     });
   }
   const rigor = totalAssumptions > 0 ? (validatedAssumptions / totalAssumptions) * 100 : null;
@@ -284,7 +283,7 @@ export function computeDnaProfile(decisions: DnaDecisionInput[]): DnaProfile {
 
   const dimensions: DnaDimensionMetric[] = [
     dimension("Calibration", "Confidence Calibration", "How closely stated confidence matches realized outcomes (Brier score).", calibration, calibrationEvidence),
-    dimension("PredictionAccuracy", "Prediction Accuracy", "Closeness of actual outcomes to expected results.", predictionAccuracy, predictionEvidence),
+    dimension("PredictionAccuracy", "Targets met", "Share of comparable targets met at review.", predictionAccuracy, predictionEvidence),
     dimension("AssumptionRigor", "Assumption Rigor", "Share of testable assumptions that were validated.", rigor, rigorEvidence),
     dimension("RiskForesight", "Risk Foresight", "Share of real failures and surprises that were anticipated in pre-mortems.", riskForesight, riskEvidence),
     dimension("EstimationAccuracy", "Time & Cost Estimation", "Precision of time and cost targets versus actual values.", estimation, estimationEvidence),

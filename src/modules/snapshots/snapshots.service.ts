@@ -19,7 +19,7 @@ export interface SnapshotPayload {
   decisionReason?: string;
   beliefRationale?: string;
   expectedOutcome: string;
-  confidence: number;
+  confidence?: number | null;
   reviewDate?: string | null;
   assumptions: Array<{ statement: string; metricTarget?: string; confidence: number }>;
   alternatives: Array<{ title: string; pros: string; cons: string }>;
@@ -39,7 +39,7 @@ export class SnapshotsService {
       return "[" + obj.map((item) => this.canonicalize(item)).join(",") + "]";
     }
 
-    const sortedKeys = Object.keys(obj as Record<string, unknown>).sort();
+    const sortedKeys = Object.keys(obj as Record<string, unknown>).filter(key => (obj as Record<string, unknown>)[key] !== undefined).sort();
     const keyValues = sortedKeys.map((key) => {
       const val = (obj as Record<string, unknown>)[key];
       return `${JSON.stringify(key)}:${this.canonicalize(val)}`;

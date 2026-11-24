@@ -34,7 +34,7 @@ export class ReplayError extends Error {
 }
 
 /** Confidence as locked in the snapshot (falls back to the Decision row). */
-function originalConfidence(payloadJson: string | null | undefined, fallback: number): number {
+function originalConfidence(payloadJson: string | null | undefined, fallback: number | null): number | null {
   if (!payloadJson) return fallback;
   try {
     const p = JSON.parse(payloadJson);
@@ -59,7 +59,7 @@ export class ReplayService {
     });
 
     if (!decision) throw new ReplayError(404, `Decision ${decisionId} not found`);
-    if (userId && decision.userId && decision.userId !== userId) {
+    if (userId && decision.userId !== userId) {
       throw new ReplayError(404, `Decision ${decisionId} not found`);
     }
     if (decision.outcome) throw new ReplayError(409, "Outcome already recorded for this decision");
@@ -92,14 +92,15 @@ export class ReplayService {
     // 2. Pre-mortem verification
     const preMortemResults = decision.preMortems.map((p) => {
       const sent = preMortemEvals.find((e) => e.preMortemId === p.id);
-      return { id: p.id, occurredInReality: sent?.occurredInReality ?? p.occurredInReality ?? false };
+      return { id: p.id, occurredInReality: sent?.occurredInReality ?? p.occurredInReality ?? null };
     });
 
     // 3. Metrics (formulas in scoring.ts, from decision-dna-formulas.md)
-    const matchRate = assumptionMatchRate(assumptionResults); // 0..1 or null
-    const predictionAccuracy = computePredictionAccuracy(dto.outcomeScore, matchRate);
+    const assessed = assumptionResults.filter(a => a.validated !== null);
+    const matchRate = assumptionMatchRate(assessed);
+    const predictionAccuracy = null;
     const confidence = originalConfidence(decision.snapshot?.payloadJson, decision.confidence);
-    const confidenceVariance = dto.outcomeScore - confidence;
+    const confidenceVariance = null;
 
     // 4. Save everything atomically
     let outcome: Awaited<ReturnType<typeof prisma.outcome.create>>;
@@ -137,7 +138,7 @@ export class ReplayService {
             decisionId,
             eventType: "EVIDENCE_NOTE",
             title: "Replay Completed",
-            detail: `Outcome recorded with ${dto.outcomeScore}/100 score and ${predictionAccuracy}% prediction accuracy.`,
+            detail: "Actual outcome recorded.",
           },
         });
 
@@ -158,7 +159,7 @@ export class ReplayService {
       predictionAccuracy,
       outcomeScore: dto.outcomeScore,
       confidenceVariance,
-      assumptionAccuracyRate: Math.round((matchRate ?? 0) * 100),
+      assumptionAccuracyRate: matchRate===null ? null : Math.round(matchRate*100),
       recordedAt: outcome.recordedAt,
       // --- new, additive fields ---
       originalConfidence: confidence,
@@ -187,12 +188,12 @@ export class ReplayService {
     if (!decision || !decision.outcome) {
       return null;
     }
-    if (userId && decision.userId && decision.userId !== userId) {
+    if (userId && decision.userId !== userId) {
       return null;
     }
 
     const validatedCount = decision.assumptions.filter((a) => a.validated === true).length;
-    const totalCount = decision.assumptions.length;
+    const totalCount = decision.assumptions.filter(a=>a.validated!==null).length;
     const confidence = originalConfidence(decision.snapshot?.payloadJson, decision.confidence);
 
     return {
@@ -206,8 +207,8 @@ export class ReplayService {
       },
       outcome: decision.outcome,
       metrics: {
-        predictionAccuracy: decision.outcome.predictionAccuracy ?? decision.outcome.outcomeScore,
-        confidenceCalibrationDelta: decision.outcome.outcomeScore - confidence,
+        predictionAccuracy: null,
+        confidenceCalibrationDelta: null,
         assumptionsValidatedRatio: `${validatedCount}/${totalCount}`,
         preMortemMatched: decision.preMortems.some((p) => p.occurredInReality === true),
       },
@@ -227,57 +228,8 @@ export class ReplayService {
    * Aggregates cognitive pattern summaries across all completed replays for the user.
    */
   public async getPatternSummary(userId?: string) {
-    const outcomes = await prisma.outcome.findMany({
-      where: userId ? { decision: { userId } } : {},
-      include: {
-        decision: {
-          include: { assumptions: true, preMortems: true },
-        },
-      },
-    });
-
-    if (outcomes.length === 0) {
-      return {
-        totalDecisionsEvaluated: 0,
-        overallPredictionAccuracy: 0,
-        calibrationBias: "INSUFFICIENT_DATA",
-        detectedPatterns: [],
-      };
-    }
-
-    const totalAccuracy = outcomes.reduce((acc, curr) => acc + (curr.predictionAccuracy || curr.outcomeScore), 0);
-    const avgAccuracy = Math.round(totalAccuracy / outcomes.length);
-
-    // Analyze overconfidence vs underconfidence
-    const totalVariance = outcomes.reduce((acc, curr) => acc + (curr.outcomeScore - curr.decision.confidence), 0);
-    const avgVariance = totalVariance / outcomes.length;
-
-    let calibrationBias = "WELL_CALIBRATED";
-    if (avgVariance < -15) {
-      calibrationBias = "OVERCONFIDENT";
-    } else if (avgVariance > 15) {
-      calibrationBias = "UNDERCONFIDENT";
-    }
-
-    return {
-      totalDecisionsEvaluated: outcomes.length,
-      overallPredictionAccuracy: avgAccuracy,
-      calibrationBias,
-      detectedPatterns: [
-        {
-          patternKey: "SCHEDULE_OPTIMISM",
-          title: "Schedule Optimism Bias",
-          description: "Tendency to underestimate delivery timelines across technical decisions.",
-          severity: avgAccuracy < 70 ? "HIGH" : "LOW",
-        },
-        {
-          patternKey: "PRE_MORTEM_ANTICIPATION",
-          title: "Pre-Mortem Foresight",
-          description: "Pre-mortem failure modes successfully anticipated key bottlenecks.",
-          severity: "POSITIVE",
-        },
-      ],
-    };
+    const count = await prisma.outcome.count({ where: userId ? { decision: { userId } } : {} });
+    return { totalDecisionsEvaluated: count, overallPredictionAccuracy: null, calibrationBias: "INSUFFICIENT_DATA", detectedPatterns: [] };
   }
 }
 
