@@ -1,9 +1,6 @@
 import { prisma } from "../../config/database";
 import { OAuth2Client } from "google-auth-library";
 
-const googleClientId = process.env.GOOGLE_CLIENT_ID;
-const oauthClient = new OAuth2Client(googleClientId);
-
 export interface GoogleLoginDto {
   email: string;
   name: string;
@@ -28,8 +25,10 @@ export class AuthService {
    * Verifies an official Google Identity Services ID Token JWT.
    */
   async verifyGoogleToken(idToken: string) {
+    const googleClientId = process.env.GOOGLE_CLIENT_ID;
     if (googleClientId) {
       try {
+        const oauthClient = new OAuth2Client(googleClientId);
         const ticket = await oauthClient.verifyIdToken({
           idToken,
           audience: googleClientId,

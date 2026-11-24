@@ -8,11 +8,10 @@
 // 3. Connect to database on launch and register graceful termination handlers.
 // ==============================================================================
 
+import "dotenv/config";
 import express, { Express, Request, Response } from "express";
 import cors from "cors";
-import dotenv from "dotenv";
 
-dotenv.config();
 
 import { connectDatabase, disconnectDatabase } from "./config/database";
 import { authGuard } from "./common/guards/auth.guard";
