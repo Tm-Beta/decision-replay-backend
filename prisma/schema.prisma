@@ -18,6 +18,7 @@ datasource db {
 }
 
 model User {
+  reviewPushSubscriptions ReviewPushSubscription[]
   id        String     @id @default(cuid())
   email     String     @unique
   name      String
@@ -60,6 +61,7 @@ model BranchPlan {
 }
 
 model Decision {
+  reviewPushDeliveries ReviewPushDelivery[]
   decidedOn String?
   outcomeKnown Boolean?
   nextReminder DateTime?
@@ -193,4 +195,24 @@ model ChatUsage {
   day String
   count Int @default(0)
   @@unique([userId, day])
+}
+
+model ReviewPushSubscription {
+  id           String               @id @default(cuid())
+  userId       String
+  user         User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  endpoint     String               @unique
+  p256dh       String
+  auth         String
+  deliveries   ReviewPushDelivery[]
+  @@index([userId])
+}
+
+model ReviewPushDelivery {
+  subscriptionId String
+  subscription   ReviewPushSubscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  decisionId     String
+  decision       Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  dueAt          DateTime
+  @@id([subscriptionId, decisionId, dueAt])
 }

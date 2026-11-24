@@ -25,6 +25,7 @@ import { aiRouter } from "./modules/ai-analyst/ai.controller";
 import { authRouter } from "./modules/auth/auth.controller";
 
 import { chatRouter } from "./modules/chat";
+import { reviewPushRouter, startReviewPushWorker } from "./modules/review-push";
 import { groupsRouter } from "./modules/groups";
 
 const app: Express = express();
@@ -107,6 +108,7 @@ app.get("/health", (_req: Request, res: Response) => {
 // Mount API routes
 app.use("/api/v1/auth", authRateLimiter, authRouter);
 app.use("/api/v1/chat", authGuard, chatRouter);
+app.use("/api/v1/review-push", authGuard, reviewPushRouter);
 app.use("/api/v1/groups", authGuard, groupsRouter);
 app.use("/api/v1/decisions", authGuard, decisionsRouter);
 app.use("/api/v1/assumptions", authGuard, assumptionsRouter);
@@ -119,6 +121,7 @@ app.use(httpExceptionFilter);
 
 async function bootstrap() {
   await connectDatabase();
+  const stopReviewPush = startReviewPushWorker();
 
   const server = app.listen(port, () => {
     console.log(`🚀 Decision Replay Backend running at http://localhost:${port}`);
@@ -126,6 +129,7 @@ async function bootstrap() {
   });
 
   const handleShutdown = async () => {
+    stopReviewPush();
     console.log("\n[Server] Shutting down gracefully...");
     server.close(async () => {
       await disconnectDatabase();
