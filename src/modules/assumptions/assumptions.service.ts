@@ -43,7 +43,7 @@ export class AssumptionsService {
     if (!assumption) {
       throw new AssumptionError(404, `Assumption ${assumptionId} not found`);
     }
-    if (userId && assumption.decision.userId && assumption.decision.userId !== userId) {
+    if (userId && assumption.decision.userId !== userId) {
       throw new AssumptionError(404, `Assumption ${assumptionId} not found`);
     }
     if (assumption.decision.outcome) {

@@ -24,6 +24,7 @@ import { dnaRouter } from "./modules/dna-engine/dna.controller";
 import { aiRouter } from "./modules/ai-analyst/ai.controller";
 import { authRouter } from "./modules/auth/auth.controller";
 
+import { chatRouter } from "./modules/chat";
 import { groupsRouter, recoverUngrouped } from "./modules/groups";
 
 const app: Express = express();
@@ -105,6 +106,7 @@ app.get("/health", (_req: Request, res: Response) => {
 
 // Mount API routes
 app.use("/api/v1/auth", authRateLimiter, authRouter);
+app.use("/api/v1/chat", authGuard, chatRouter);
 app.use("/api/v1/groups", authGuard, groupsRouter);
 app.use("/api/v1/decisions", authGuard, decisionsRouter);
 app.use("/api/v1/assumptions", authGuard, assumptionsRouter);

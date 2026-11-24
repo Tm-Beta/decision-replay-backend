@@ -176,3 +176,21 @@ model Analysis {
   decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
 }
+
+model ChatMessage {
+  id String @id @default(cuid())
+  userId String
+  projectId String?
+  role String
+  content String
+  createdAt DateTime @default(now())
+  @@index([userId, projectId, createdAt])
+}
+
+model ChatUsage {
+  id String @id @default(cuid())
+  userId String
+  day String
+  count Int @default(0)
+  @@unique([userId, day])
+}

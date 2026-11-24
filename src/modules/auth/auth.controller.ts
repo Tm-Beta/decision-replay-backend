@@ -10,49 +10,21 @@ export const authRouter = Router();
  */
 authRouter.post("/google", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    let { email, name, avatar, googleId, credential, accessToken } = req.body;
-
-    // Verify official Google OAuth2 Access Token if provided
-    if (accessToken && typeof accessToken === "string") {
-      try {
-        const verified = await authService.verifyGoogleAccessToken(accessToken);
-        email = verified.email;
-        name = verified.name;
-        avatar = verified.avatar;
-        googleId = verified.googleId;
-      } catch (tokenErr) {
-        console.warn("Failed to verify Google access token:", tokenErr);
-      }
-    }
-    // Decode and verify official Google Identity Services (GSI) credential JWT if provided
-    else if (credential && typeof credential === "string") {
-      try {
-        const verified = await authService.verifyGoogleToken(credential);
-        email = verified.email;
-        name = verified.name;
-        avatar = verified.avatar;
-        googleId = verified.googleId;
-      } catch (decodeErr) {
-        console.warn("Failed to verify Google JWT token, checking body fields:", decodeErr);
-      }
-    }
-
-    if (!email) {
-      res.status(400).json({
-        type: "https://decision-replay.dev/errors/missing-email",
-        title: "Bad Request",
-        status: 400,
-        detail: "Email or verified Google credential is required for Google authentication.",
-      });
+    const { credential, accessToken } = req.body;
+    if ((!credential || typeof credential !== "string") && (!accessToken || typeof accessToken !== "string")) {
+      res.status(401).json({ message: "A verified Google sign-in is required." });
       return;
     }
-
-    const result = await authService.loginWithGoogle({
-      email,
-      name: name || email.split("@")[0],
-      avatar,
-      googleId,
-    });
+    let verified;
+    try {
+      verified = typeof accessToken === "string" && accessToken
+        ? await authService.verifyGoogleAccessToken(accessToken)
+        : await authService.verifyGoogleToken(credential);
+    } catch {
+      res.status(401).json({ message: "Google sign-in could not be verified." });
+      return;
+    }
+    const result = await authService.loginWithGoogle(verified);
 
     res.status(200).json({
       status: "success",

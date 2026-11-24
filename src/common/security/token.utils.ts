@@ -3,7 +3,11 @@ import crypto from "crypto";
 const AUTH_SECRET =
   process.env.AUTH_SECRET ||
   process.env.SESSION_SECRET ||
-  "decision-replay-enterprise-hmac-sha256-secret-key-2026";
+  (process.env.NODE_ENV === "production" ? "" : "decision-replay-enterprise-hmac-sha256-secret-key-2026");
+
+if (!AUTH_SECRET || (process.env.NODE_ENV === "production" && (AUTH_SECRET.length < 32 || AUTH_SECRET === "decision-replay-enterprise-hmac-sha256-secret-key-2026"))) {
+  throw new Error("Set AUTH_SECRET to a random value of at least 32 characters in production.");
+}
 
 export interface TokenPayload {
   userId: string;
@@ -63,7 +67,7 @@ export function verifySessionToken(token: string): { userId: string; email: stri
 
       // Max session age: 30 days
       const maxAgeMs = 30 * 24 * 60 * 60 * 1000;
-      if (Date.now() - timestamp > maxAgeMs) {
+      if (!Number.isFinite(timestamp) || timestamp > Date.now() || Date.now() - timestamp > maxAgeMs) {
         return null;
       }
 
@@ -75,13 +79,6 @@ export function verifySessionToken(token: string): { userId: string; email: stri
     }
   }
 
-  // Graceful migration support for legacy development tokens: usr_tok_<userId>_<emailBase64>
-  if (token.startsWith("usr_tok_")) {
-    const parts = token.split("_");
-    if (parts.length >= 3 && parts[2]) {
-      return { userId: parts[2], email: "" };
-    }
-  }
 
   return null;
 }
