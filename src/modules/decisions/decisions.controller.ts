@@ -7,6 +7,7 @@
 // 2. Enforce response codes according to `decision-replay-docs/api-contracts/decisions-api.md`.
 // ==============================================================================
 
+import { z } from "zod";
 import { Router, Response, NextFunction } from "express";
 import { prisma } from "../../config/database";
 import { decisionsService } from "./decisions.service";
@@ -72,6 +73,8 @@ decisionsRouter.get(
             id: true,
             title: true,
             project: { select: { name: true } },
+            reviewDate: true,
+            nextReminder: true,
           },
           orderBy: { createdAt: "asc" },
         }),
@@ -151,3 +154,52 @@ decisionsRouter.patch(
     }
   },
 );
+
+decisionsRouter.delete("/:id", async (req: AuthenticatedRequest,res,next)=>{
+  try {
+    await prisma.$transaction(async tx=>{
+      const decision=await tx.decision.findFirst({where:{id:req.params.id,userId:req.userId}});
+      if(!decision)throw Object.assign(new Error("Decision not found."),{statusCode:404});
+      if(!decision.parentId && await tx.branchPlan.count({where:{originId:decision.id,projectId:decision.projectId||""}})) throw Object.assign(new Error("Move or remove plans from this starting decision first."),{statusCode:409});
+      await tx.decision.updateMany({where:{parentId:decision.id,projectId:decision.projectId,userId:req.userId},data:{parentId:decision.parentId}});
+      await tx.branchPlan.updateMany({where:{originId:decision.id,projectId:decision.projectId||""},data:{originId:decision.parentId}});
+      const related=await tx.decision.findMany({where:{userId:req.userId,projectId:decision.projectId},select:{id:true,influences:true}});
+      for(const row of related){try{const ids=JSON.parse(row.influences);if(Array.isArray(ids)&&ids.includes(decision.id))await tx.decision.update({where:{id:row.id},data:{influences:JSON.stringify(ids.filter((id:string)=>id!==decision.id))}})}catch{}}
+      await tx.decision.delete({where:{id:decision.id}});
+    });
+    res.sendStatus(204);
+  }catch(error){next(error)}
+});
+
+
+const editSchema=z.object({
+ title:z.string().trim().min(1).max(200),
+ choice:z.string().trim().min(1).max(4000),
+ expectedOutcome:z.string().max(4000),
+ decisionReason:z.string().max(4000),
+ beliefRationale:z.string().max(4000),
+ confidence:z.number().int().min(1).max(100).nullable(),
+ reviewDate:z.string().datetime().nullable()
+});
+decisionsRouter.patch("/:id/details",async(req:AuthenticatedRequest,res,next)=>{
+ try{
+  const parsed=editSchema.safeParse(req.body);
+  if(!parsed.success){res.status(400).json({message:"Please check the decision details."});return;}
+  await prisma.$transaction(async tx=>{
+   const current=await tx.decision.findFirst({where:{id:req.params.id,userId:req.userId}});
+   if(!current)throw Object.assign(new Error("Decision not found."),{statusCode:404});
+   const nextData={...parsed.data,reviewDate:parsed.data.reviewDate?new Date(parsed.data.reviewDate):null};
+   const fields=["title","choice","expectedOutcome","decisionReason","beliefRationale","confidence","reviewDate"] as const;
+   const changes=fields.flatMap(field=>{
+    const before=current[field],after=nextData[field];
+    const oldValue=before instanceof Date?before.toISOString():before;
+    const newValue=after instanceof Date?after.toISOString():after;
+    return oldValue===newValue?[]:[{field,before:oldValue,after:newValue}];
+   });
+   if(!changes.length)return;
+   await tx.decision.update({where:{id:current.id},data:{...nextData,...(changes.some(c=>c.field==="reviewDate")?{nextReminder:null}:{})}});
+   await tx.timelineEvent.create({data:{decisionId:current.id,eventType:"CONTEXT_SHIFT",title:"Decision details updated",detail:changes.map(c=>c.field+": "+String(c.before??"—")+" → "+String(c.after??"—")).join("\n"),metadataJson:JSON.stringify({changes})}});
+  });
+  res.sendStatus(204);
+ }catch(error){next(error)}
+});

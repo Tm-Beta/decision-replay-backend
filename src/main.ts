@@ -25,7 +25,7 @@ import { aiRouter } from "./modules/ai-analyst/ai.controller";
 import { authRouter } from "./modules/auth/auth.controller";
 
 import { chatRouter } from "./modules/chat";
-import { groupsRouter, recoverUngrouped } from "./modules/groups";
+import { groupsRouter } from "./modules/groups";
 
 const app: Express = express();
 const port = process.env.PORT || 4000;
@@ -119,7 +119,6 @@ app.use(httpExceptionFilter);
 
 async function bootstrap() {
   await connectDatabase();
-  await recoverUngrouped();
 
   const server = app.listen(port, () => {
     console.log(`🚀 Decision Replay Backend running at http://localhost:${port}`);

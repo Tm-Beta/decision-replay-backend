@@ -196,14 +196,16 @@ export class ReplayService {
     const totalCount = decision.assumptions.filter(a=>a.validated!==null).length;
     const confidence = originalConfidence(decision.snapshot?.payloadJson, decision.confidence);
 
+    let original: { expectedOutcome?: string; decisionReason?: string } = {};
+    try { original = decision.snapshot ? JSON.parse(decision.snapshot.payloadJson) : {}; } catch {}
     return {
       decisionId: decision.id,
       title: decision.title,
       initialSnapshot: {
         lockedAt: decision.lockedAt,
         confidence,
-        expectedOutcome: decision.expectedOutcome,
-        decisionReason: decision.decisionReason,
+        expectedOutcome: original.expectedOutcome ?? decision.expectedOutcome,
+        decisionReason: original.decisionReason ?? decision.decisionReason,
       },
       outcome: decision.outcome,
       metrics: {
