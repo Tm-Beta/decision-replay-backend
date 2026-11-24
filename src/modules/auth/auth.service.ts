@@ -22,6 +22,42 @@ export interface AuthResponse {
 
 export class AuthService {
   /**
+   * Verifies an official Google OAuth2 Access Token by querying Google's userinfo endpoint.
+   */
+  async verifyGoogleAccessToken(accessToken: string) {
+    const response = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+      },
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.warn("Google userinfo fetch failed:", response.status, errText);
+      throw new Error(`Google userinfo request failed with status ${response.status}`);
+    }
+
+    const data = (await response.json()) as {
+      sub: string;
+      email: string;
+      name?: string;
+      picture?: string;
+      email_verified?: boolean;
+    };
+
+    if (!data.email) {
+      throw new Error("Google account did not return a valid email address");
+    }
+
+    return {
+      email: data.email,
+      name: data.name || data.email.split("@")[0],
+      avatar: data.picture,
+      googleId: data.sub,
+    };
+  }
+
+  /**
    * Verifies an official Google Identity Services ID Token JWT.
    */
   async verifyGoogleToken(idToken: string) {
