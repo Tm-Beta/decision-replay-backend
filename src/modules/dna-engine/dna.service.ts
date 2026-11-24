@@ -22,7 +22,7 @@ export class DnaService {
   public async getDecisionDnaProfile(userId?: string): Promise<DnaProfile> {
     const decisions = await prisma.decision.findMany({
       where: {
-        ...(userId ? { OR: [{ userId }, { userId: null }] } : {}),
+        ...(userId ? { userId } : {}),
         status: "REPLAYED",
         outcome: { isNot: null },
       },

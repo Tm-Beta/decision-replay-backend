@@ -9,7 +9,7 @@
 // ==============================================================================
 
 import "dotenv/config";
-import express, { Express, Request, Response } from "express";
+import express, { Express, Request, Response, NextFunction } from "express";
 import cors from "cors";
 
 
@@ -27,9 +27,64 @@ import { authRouter } from "./modules/auth/auth.controller";
 const app: Express = express();
 const port = process.env.PORT || 4000;
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Security Headers Middleware
+app.use((_req: Request, res: Response, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  next();
+});
+
+// Production-ready CORS with trusted origins
+const allowedOrigins = [
+  "http://localhost:3000",
+  "http://localhost",
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes(origin) || process.env.NODE_ENV !== "production") {
+        callback(null, true);
+      } else {
+        callback(new Error("Origin not permitted by CORS policy"));
+      }
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+app.use(express.json({ limit: "2mb" }));
+
+// In-Memory Rate Limiter for Auth Endpoint (Protection against brute-force / DDoS)
+const authRateLimitMap = new Map<string, { count: number; resetTime: number }>();
+function authRateLimiter(req: Request, res: Response, next: NextFunction) {
+  const clientIp = req.ip || req.socket.remoteAddress || "client";
+  const now = Date.now();
+  const record = authRateLimitMap.get(clientIp);
+
+  if (!record || now > record.resetTime) {
+    authRateLimitMap.set(clientIp, { count: 1, resetTime: now + 60 * 1000 });
+    return next();
+  }
+
+  if (record.count >= 30) {
+    return res.status(429).json({
+      type: "https://decision-replay.dev/errors/rate-limit-exceeded",
+      title: "Too Many Requests",
+      status: 429,
+      detail: "Rate limit exceeded on authentication endpoint. Please wait 60 seconds.",
+    });
+  }
+
+  record.count++;
+  next();
+}
 
 // Request logger
 app.use((req: Request, _res: Response, next) => {
@@ -47,7 +102,7 @@ app.get("/health", (_req: Request, res: Response) => {
 });
 
 // Mount API routes
-app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/auth", authRateLimiter, authRouter);
 app.use("/api/v1/decisions", authGuard, decisionsRouter);
 app.use("/api/v1/assumptions", authGuard, assumptionsRouter);
 app.use("/api/v1/replay", authGuard, replayRouter);

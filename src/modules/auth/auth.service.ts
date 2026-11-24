@@ -1,5 +1,6 @@
 import { prisma } from "../../config/database";
 import { OAuth2Client } from "google-auth-library";
+import { generateSessionToken } from "../../common/security/token.utils";
 
 export interface GoogleLoginDto {
   email: string;
@@ -134,8 +135,8 @@ export class AuthService {
       },
     });
 
-    // Simple deterministic token format for session verification
-    const token = `usr_tok_${user.id}_${Buffer.from(user.email).toString("base64")}`;
+    // Cryptographically signed HMAC-SHA256 session token
+    const token = generateSessionToken(user.id, user.email);
 
     return {
       user,

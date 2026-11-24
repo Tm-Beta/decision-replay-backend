@@ -22,7 +22,7 @@ replayRouter.post(
   validateBody(RecordOutcomeSchema),
   async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
     try {
-      const result = await replayService.recordOutcome(req.params.decisionId, req.body);
+      const result = await replayService.recordOutcome(req.params.decisionId, req.body, req.userId);
       res.status(201).json(result);
     } catch (error) {
       next(error);
@@ -43,7 +43,7 @@ replayRouter.get("/patterns/summary", async (req: AuthenticatedRequest, res: Res
 // GET /api/v1/replay/:decisionId - Side-by-side comparison between snapshot and reality
 replayRouter.get("/:decisionId", async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
-    const comparison = await replayService.getReplayComparison(req.params.decisionId);
+    const comparison = await replayService.getReplayComparison(req.params.decisionId, req.userId);
     if (!comparison) {
       res.status(404).json({ statusCode: 404, message: "Replay comparison not available. Record an outcome first." });
       return;

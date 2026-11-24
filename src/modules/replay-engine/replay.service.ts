@@ -49,7 +49,7 @@ export class ReplayService {
   /**
    * Records the actual outcome, validates assumptions, and calculates accuracy metrics.
    */
-  public async recordOutcome(decisionId: string, dto: RecordOutcomeDto) {
+  public async recordOutcome(decisionId: string, dto: RecordOutcomeDto, userId?: string) {
     const assumptionEvals = dto.assumptionEvaluations ?? [];
     const preMortemEvals = dto.preMortemEvaluations ?? [];
 
@@ -59,6 +59,9 @@ export class ReplayService {
     });
 
     if (!decision) throw new ReplayError(404, `Decision ${decisionId} not found`);
+    if (userId && decision.userId && decision.userId !== userId) {
+      throw new ReplayError(404, `Decision ${decisionId} not found`);
+    }
     if (decision.outcome) throw new ReplayError(409, "Outcome already recorded for this decision");
     if (decision.status === "DRAFT") {
       throw new ReplayError(422, "Decision must be locked before an outcome can be recorded");
@@ -169,7 +172,7 @@ export class ReplayService {
   /**
    * Generates a side-by-side comparison between frozen snapshot expectations and actual results.
    */
-  public async getReplayComparison(decisionId: string) {
+  public async getReplayComparison(decisionId: string, userId?: string) {
     const decision = await prisma.decision.findUnique({
       where: { id: decisionId },
       include: {
@@ -182,6 +185,9 @@ export class ReplayService {
     });
 
     if (!decision || !decision.outcome) {
+      return null;
+    }
+    if (userId && decision.userId && decision.userId !== userId) {
       return null;
     }
 

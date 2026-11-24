@@ -32,14 +32,18 @@ export class AssumptionsService {
    */
   public async validateAssumption(
     assumptionId: string,
-    data: { metricActual?: string; validated?: boolean }
+    data: { metricActual?: string; validated?: boolean },
+    userId?: string
   ) {
     const assumption = await prisma.assumption.findUnique({
       where: { id: assumptionId },
-      include: { decision: { select: { outcome: { select: { id: true } } } } },
+      include: { decision: { select: { userId: true, outcome: { select: { id: true } } } } },
     });
 
     if (!assumption) {
+      throw new AssumptionError(404, `Assumption ${assumptionId} not found`);
+    }
+    if (userId && assumption.decision.userId && assumption.decision.userId !== userId) {
       throw new AssumptionError(404, `Assumption ${assumptionId} not found`);
     }
     if (assumption.decision.outcome) {
