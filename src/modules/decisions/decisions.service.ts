@@ -19,12 +19,15 @@ export class DecisionsService {
    */
   public async createDecision(dto: CreateDecisionDto, userId?: string) {
     return await prisma.$transaction(async (tx) => {
-      const group = await tx.project.findFirst({
+      const group = dto.projectId ? await tx.project.findFirst({
         where: { id: dto.projectId, userId },
-      });
-      if (!group)
+      }) : null;
+      if (dto.projectId && !group)
         throw Object.assign(new Error("Group not found."), { statusCode: 404 });
-      const scope = { projectId: group.id, userId };
+      if (!group && (dto.parentId || dto.planId || dto.influences.length)) {
+        throw Object.assign(new Error("Choose a project to link decisions or plans."), { statusCode: 400 });
+      }
+      const scope = { projectId: group?.id ?? null, userId };
       if (dto.parentId) {
         const parent = await tx.decision.findFirst({
           where: { ...scope, id: dto.parentId },
@@ -53,7 +56,7 @@ export class DecisionsService {
         !(await tx.branchPlan.findFirst({
           where: {
             id: dto.planId,
-            projectId: group.id,
+            projectId: group?.id,
             decision: null,
             status: "OPEN",
           },

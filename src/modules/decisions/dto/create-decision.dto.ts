@@ -31,7 +31,7 @@ export const CreateDecisionSchema = z.object({
   decidedOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
   outcomeKnown: z.boolean().optional(),
   influences: z.array(z.string()).default([]),
-  projectId: z.string().min(1),
+  projectId: z.string().min(1).optional(),
   parentId: z.string().optional(),
   planId: z.string().optional(),
   title: z.string().trim().min(1),

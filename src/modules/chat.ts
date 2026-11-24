@@ -6,7 +6,7 @@ import { AuthenticatedRequest } from "../common/guards/auth.guard";
 export const chatRouter = Router();
 const DAILY_LIMIT = 20;
 const dayKey = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Colombo", year:"numeric",month:"2-digit",day:"2-digit" }).format(new Date());
-const bodySchema = z.object({message:z.string().trim().min(1).max(4000),projectId:z.string().min(1).nullable().optional()});
+const bodySchema = z.object({message:z.string().trim().min(1).max(4000),decisionId:z.string().min(1).optional(),projectId:z.string().min(1).nullable().optional()});
 const err = (statusCode:number,message:string) => Object.assign(new Error(message),{statusCode});
 const handler = (fn:(req:AuthenticatedRequest,res:import("express").Response)=>Promise<void>):import("express").RequestHandler =>
   (req,res,next)=>{fn(req,res).catch(next)};
@@ -27,9 +27,10 @@ chatRouter.get("/",handler(async(req,res)=>{
 chatRouter.post("/",handler(async(req,res)=>{
   const parsed=bodySchema.safeParse(req.body);
   if(!parsed.success) throw err(400,"Enter a message of up to 4,000 characters.");
-  const {message,projectId:inputProject}=parsed.data;
+  const {message,decisionId,projectId:inputProject}=parsed.data;
   const projectId=inputProject||null,userId=req.userId!,day=dayKey();
   await authorizeProject(userId,projectId);
+  if(decisionId && !await prisma.decision.findFirst({where:{id:decisionId,userId,...(projectId?{projectId}:{})},select:{id:true}})) throw err(404,"Decision not found.");
   const apiKey=process.env.GEMINI_API_KEY?.trim();
   if(!apiKey) throw err(503,"The assistant is not configured yet.");
   await prisma.$transaction(async tx=>{
@@ -40,7 +41,7 @@ chatRouter.post("/",handler(async(req,res)=>{
   try {
     const [projects,decisions,history]=await Promise.all([
       prisma.project.findMany({where:{userId,...(projectId?{id:projectId}:{})},select:{id:true,name:true,status:true},take:50}),
-      prisma.decision.findMany({where:{userId,...(projectId?{projectId}:{})},orderBy:{createdAt:"desc"},take:40,select:{id:true,projectId:true,title:true,choice:true,decisionReason:true,expectedOutcome:true,createdAt:true,outcomeKnown:true,outcome:{select:{actualOutcome:true,reflection:true}},events:{where:{eventType:{in:["CONTEXT_SHIFT","EVIDENCE_NOTE"]}},orderBy:{createdAt:"desc"},take:3,select:{title:true,detail:true}},assumptions:{take:8,select:{statement:true,metricTarget:true,metricActual:true,validated:true}},preMortems:{take:3,select:{failureScenario:true,preventiveAction:true,occurredInReality:true}}}}),
+      prisma.decision.findMany({where:{userId,...(decisionId?{id:decisionId}:{}),...(projectId?{projectId}:{})},orderBy:{createdAt:"desc"},take:40,select:{id:true,projectId:true,title:true,choice:true,decisionReason:true,expectedOutcome:true,createdAt:true,outcomeKnown:true,outcome:{select:{actualOutcome:true,reflection:true}},events:{where:{eventType:{in:["CONTEXT_SHIFT","EVIDENCE_NOTE"]}},orderBy:{createdAt:"desc"},take:3,select:{title:true,detail:true}},assumptions:{take:8,select:{statement:true,metricTarget:true,metricActual:true,validated:true}},preMortems:{take:3,select:{failureScenario:true,preventiveAction:true,occurredInReality:true}}}}),
       prisma.chatMessage.findMany({where:{userId,projectId},orderBy:{createdAt:"desc"},take:12,select:{role:true,content:true}})
     ]);
     const context=JSON.stringify({projects,decisions}).slice(0,45000);
