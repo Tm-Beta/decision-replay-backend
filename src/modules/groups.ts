@@ -226,9 +226,16 @@ groupsRouter.post(
 groupsRouter.patch(
   "/:id/plans/:planId",
   route(async (req, res) => {
-    const status = req.body.status;
-    if (!["OPEN", "DEFERRED", "DROPPED"].includes(status))
+    const { status, title, expectedOutcome } = req.body;
+    if (status !== undefined && !["OPEN", "DEFERRED", "DROPPED"].includes(status))
       throw fail("Choose a plan status.", 400);
+    if (status === undefined && title === undefined && expectedOutcome === undefined)
+      throw fail("Enter a change to the plan.", 400);
+    const data = {
+      status,
+      title: title === undefined ? undefined : required(title, "a planned choice"),
+      expectedOutcome: expectedOutcome === undefined ? undefined : required(expectedOutcome, "an expected outcome"),
+    };
     const updated = await prisma.branchPlan.updateMany({
       where: {
         id: req.params.planId,
@@ -236,9 +243,28 @@ groupsRouter.patch(
         project: { userId: req.userId },
         decision: null,
       },
-      data: { status },
+      data,
     });
-    if (!updated.count) throw fail("Plan unavailable.", 409);
+    if (!updated.count) throw fail("This plan is unavailable or already recorded.", 409);
+    res.sendStatus(204);
+  }),
+);
+
+groupsRouter.delete(
+  "/:id/plans/:planId",
+  route(async (req, res) => {
+    await prisma.$transaction(async (tx) => {
+      const scope = { projectId: req.params.id, project: { userId: req.userId } };
+      const plan = await tx.branchPlan.findFirst({
+        where: { ...scope, id: req.params.planId, decision: null },
+      });
+      if (!plan) throw fail("This plan is unavailable or already recorded.", 409);
+      await tx.branchPlan.updateMany({
+        where: { ...scope, parentPlanId: plan.id },
+        data: { parentPlanId: plan.parentPlanId, originId: plan.originId },
+      });
+      await tx.branchPlan.delete({ where: { id: plan.id } });
+    });
     res.sendStatus(204);
   }),
 );
