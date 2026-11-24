@@ -19,12 +19,60 @@ export class DecisionsService {
    */
   public async createDecision(dto: CreateDecisionDto, userId?: string) {
     return await prisma.$transaction(async (tx) => {
-      // 1. Create the core Decision entity
+      const group = await tx.project.findFirst({
+        where: { id: dto.projectId, userId },
+      });
+      if (!group)
+        throw Object.assign(new Error("Group not found."), { statusCode: 404 });
+      const scope = { projectId: group.id, userId };
+      if (dto.parentId) {
+        const parent = await tx.decision.findFirst({
+          where: { ...scope, id: dto.parentId },
+        });
+        if (!parent)
+          throw Object.assign(new Error("Choose a parent in this group."), {
+            statusCode: 400,
+          });
+      }
+      const influences = [...new Set(dto.influences)].filter(
+        (id) => id !== dto.parentId,
+      );
+      if (
+        influences.length !==
+        (await tx.decision.count({
+          where: { ...scope, id: { in: influences } },
+        }))
+      ) {
+        throw Object.assign(
+          new Error("Choose related decisions in this group."),
+          { statusCode: 400 },
+        );
+      }
+      if (
+        dto.planId &&
+        !(await tx.branchPlan.findFirst({
+          where: {
+            id: dto.planId,
+            projectId: group.id,
+            decision: null,
+            status: "OPEN",
+          },
+        }))
+      ) {
+        throw Object.assign(new Error("This planned branch is unavailable."), {
+          statusCode: 409,
+        });
+      }
       const decision = await tx.decision.create({
         data: {
           title: dto.title,
           category: dto.category,
           projectId: dto.projectId,
+          influences: JSON.stringify(influences),
+          decidedOn: dto.decidedOn,
+          outcomeKnown: dto.outcomeKnown,
+          parentId: dto.parentId,
+          planId: dto.planId,
           userId: userId,
           choice: dto.choice,
           context: dto.context,
@@ -60,7 +108,7 @@ export class DecisionsService {
             create: {
               eventType: "EVIDENCE_NOTE",
               title: "Decision Locked",
-              detail: `Decision reasoning captured and locked with ${dto.confidence}% confidence.`,
+              detail: "Original decision recorded.",
             },
           },
         },
@@ -68,6 +116,8 @@ export class DecisionsService {
 
       // 2. Prepare snapshot payload and compute SHA-256 hash
       const snapshotPayload = {
+        decidedOn: dto.decidedOn,
+        outcomeKnown: dto.outcomeKnown,
         title: dto.title,
         category: dto.category,
         choice: dto.choice,
@@ -82,7 +132,11 @@ export class DecisionsService {
         preMortems: dto.preMortems,
       };
 
-      const { contentHash } = await snapshotsService.freezeSnapshot(decision.id, snapshotPayload, tx);
+      const { contentHash } = await snapshotsService.freezeSnapshot(
+        decision.id,
+        snapshotPayload,
+        tx,
+      );
 
       return {
         ...decision,
@@ -133,7 +187,11 @@ export class DecisionsService {
   /**
    * Appends an auditable event to the decision timeline without altering original fields.
    */
-  public async appendTimelineEvent(decisionId: string, dto: AppendTimelineDto, userId?: string) {
+  public async appendTimelineEvent(
+    decisionId: string,
+    dto: AppendTimelineDto,
+    userId?: string,
+  ) {
     const decision = await prisma.decision.findFirst({
       where: {
         id: decisionId,

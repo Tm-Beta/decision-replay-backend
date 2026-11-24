@@ -41,10 +41,35 @@ model Project {
   user           User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
+  plans          BranchPlan[]
   decisions      Decision[]
 }
 
+model BranchPlan {
+  status String @default("OPEN")
+  id String @id @default(cuid())
+  projectId String
+  project Project @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  originId String?
+  parentPlanId String?
+  title String
+  expectedOutcome String
+  createdAt DateTime @default(now())
+  decision Decision?
+  @@index([projectId])
+}
+
 model Decision {
+  decidedOn String?
+  outcomeKnown Boolean?
+  nextReminder DateTime?
+  influences String @default("[]")
+  parentId String?
+  parent Decision? @relation("Branches", fields: [parentId], references: [id], onDelete: Restrict)
+  branches Decision[] @relation("Branches")
+  planId String? @unique
+  plan BranchPlan? @relation(fields: [planId], references: [id], onDelete: Restrict)
+  @@index([projectId, parentId])
   id              String          @id @default(cuid())
   title           String
   category        String          @default("GENERAL")
@@ -58,7 +83,7 @@ model Decision {
   beliefRationale String          @default("")
   choice          String
   expectedOutcome String
-  confidence      Int             @default(50) // 1 - 100
+  confidence      Int? // 1 - 100
   
   status          String          @default("LOCKED") // DRAFT, LOCKED, REVIEW_PENDING, REPLAYED, ARCHIVED
   reviewDate      DateTime?
@@ -132,10 +157,10 @@ model TimelineEvent {
 model Outcome {
   id                 String   @id @default(cuid())
   actualOutcome      String
-  outcomeScore       Int      @default(50) // 0 - 100 rating of result quality
+  outcomeScore       Int? // 0 - 100 rating of result quality
   predictionAccuracy Int?     // 0 - 100 calculated prediction accuracy
   reflection         String
-  wouldRepeat        Boolean  @default(true)
+  wouldRepeat        Boolean?
   unexpectedFactors  String   @default("")
   recordedAt         DateTime @default(now())
   decisionId         String   @unique

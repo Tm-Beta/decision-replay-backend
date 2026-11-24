@@ -24,6 +24,8 @@ import { dnaRouter } from "./modules/dna-engine/dna.controller";
 import { aiRouter } from "./modules/ai-analyst/ai.controller";
 import { authRouter } from "./modules/auth/auth.controller";
 
+import { groupsRouter, recoverUngrouped } from "./modules/groups";
+
 const app: Express = express();
 const port = process.env.PORT || 4000;
 
@@ -103,6 +105,7 @@ app.get("/health", (_req: Request, res: Response) => {
 
 // Mount API routes
 app.use("/api/v1/auth", authRateLimiter, authRouter);
+app.use("/api/v1/groups", authGuard, groupsRouter);
 app.use("/api/v1/decisions", authGuard, decisionsRouter);
 app.use("/api/v1/assumptions", authGuard, assumptionsRouter);
 app.use("/api/v1/replay", authGuard, replayRouter);
@@ -114,6 +117,7 @@ app.use(httpExceptionFilter);
 
 async function bootstrap() {
   await connectDatabase();
+  await recoverUngrouped();
 
   const server = app.listen(port, () => {
     console.log(`🚀 Decision Replay Backend running at http://localhost:${port}`);

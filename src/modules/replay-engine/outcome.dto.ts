@@ -26,10 +26,10 @@ export const PreMortemEvaluationSchema = z.object({
 });
 
 export const RecordOutcomeSchema = z.object({
-  actualOutcome: z.string().min(5, "Actual outcome description must be at least 5 characters"),
-  outcomeScore: z.number().int().min(0).max(100).default(50),
-  reflection: z.string().min(5, "Reflection notes must be provided"),
-  wouldRepeat: z.boolean().default(true),
+  actualOutcome: z.string().trim().min(1),
+  outcomeScore: z.number().int().min(0).max(100).nullable().default(null),
+  reflection: z.string().default(""),
+  wouldRepeat: z.boolean().nullable().default(null),
   unexpectedFactors: z.string().default(""),
   assumptionEvaluations: z.array(AssumptionEvaluationSchema).default([]),
   preMortemEvaluations: z.array(PreMortemEvaluationSchema).default([]),

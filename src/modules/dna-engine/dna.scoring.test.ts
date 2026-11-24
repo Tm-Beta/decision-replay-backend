@@ -5,7 +5,7 @@ import { computeDnaProfile, countSurprises, DnaDecisionInput } from "./dna.scori
 //
 // Calibration: (0.8-0.6)^2 + (0.7-0.9)^2 + (0.9-0.4)^2 = 0.04 + 0.04 + 0.25 -> Brier 0.11 -> 89
 //   sum(c - r) = 0.2 - 0.2 + 0.5 = 0.5 > 0.15 * 3 = 0.45 -> OVERCONFIDENCE
-// Prediction accuracy: (63 + 85 + 40 [outcomeScore fallback]) / 3 = 62.67 -> 63
+// Prediction accuracy: (63 + 85) / 2 = 74; exclude the unmeasured outcome
 // Assumption rigor: validated 2 + 1 + 0 = 3 of 3 + 1 + 1 = 5 -> 60
 // Risk foresight: anticipated 1 + 0 + 1 = 2, unanticipated 1 + 0 + 0 = 1 -> 2/3 = 66.7 -> 67 (no pattern)
 // Estimation: "< 2 weeks" vs "3 weeks" = 50 (over), "$500" vs "$450" = 90, "< 10 days" vs "8 days" = 80,
@@ -13,7 +13,7 @@ import { computeDnaProfile, countSurprises, DnaDecisionInput } from "./dna.scori
 //   Days: 3 measurements, 2 over (66.7% > 60%) -> SCHEDULE_OPTIMISM for decisions a and c.
 //   Currency: only 1 measurement (< 3) -> no COST_UNDERESTIMATION.
 // Breadth: a = 30 + 20 = 50, b = 60 + 20 = 80, c = 0 -> 43.33 -> 43
-// Overall: (89 + 63 + 60 + 67 + 69 + 43) / 6 = 65.17 -> 65
+// Overall: (89 + 74 + 60 + 67 + 69 + 43) / 6 = 67
 const decisions: DnaDecisionInput[] = [
   {
     id: "a",
@@ -69,12 +69,12 @@ describe("computeDnaProfile (hand-computed dataset)", () => {
   it("scores the six dimensions", () => {
     expect(profile.totalDecisions).toBe(3);
     expect(score("Calibration").score).toBe(89);
-    expect(score("PredictionAccuracy").score).toBe(63);
+    expect(score("PredictionAccuracy").score).toBe(74);
     expect(score("AssumptionRigor").score).toBe(60);
     expect(score("RiskForesight").score).toBe(67);
     expect(score("EstimationAccuracy").score).toBe(69);
     expect(score("AlternativeBreadth").score).toBe(43);
-    expect(profile.overallDnaScore).toBe(65);
+    expect(profile.overallDnaScore).toBe(67);
   });
 
   it("keeps the dimension names the frontend already uses", () => {

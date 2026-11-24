@@ -9,6 +9,7 @@
 // dimensions[]). Added fields: dimensions[].hasData, dimensions[].evidence[], patterns[].
 // ==============================================================================
 
+import { evaluateAssumption } from "../replay-engine/scoring";
 import { prisma } from "../../config/database";
 import { computeDnaProfile, DnaDecisionInput, DnaProfile } from "./dna.scoring";
 
@@ -36,15 +37,15 @@ export class DnaService {
     });
 
     const inputs: DnaDecisionInput[] = decisions.flatMap((d) =>
-      d.outcome
+      d.outcome && !d.outcomeKnown
         ? [
             {
               id: d.id,
               title: d.title,
               confidence: d.confidence, // set at lock time; the API has no way to edit it
               outcome: {
-                outcomeScore: d.outcome.outcomeScore,
-                predictionAccuracy: d.outcome.predictionAccuracy,
+                outcomeScore: null, // Personal ratings do not establish an observed probability.
+                predictionAccuracy: targetMatchPercent(d.assumptions),
                 unexpectedFactors: d.outcome.unexpectedFactors,
               },
               assumptions: d.assumptions.map((a) => ({
@@ -73,3 +74,8 @@ export class DnaService {
 }
 
 export const dnaService = new DnaService();
+
+function targetMatchPercent(rows:{metricTarget:string|null;metricActual:string|null}[]) {
+  const results=rows.map(row=>evaluateAssumption(row.metricTarget,row.metricActual)).filter(v=>v!==null);
+  return results.length ? Math.round(100*results.filter(Boolean).length/results.length) : null;
+}
