@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import { prisma } from "../../config/database";
+import { verifySessionToken } from "../security/token.utils";
 
 export interface AuthenticatedRequest extends Request {
   userId?: string;
@@ -26,21 +27,18 @@ export async function authGuard(
   const token = authHeader.substring(7).trim();
 
   try {
-    if (token.startsWith("usr_tok_")) {
-      const parts = token.split("_");
-      // Format: usr_tok_<cuid>_<base64email>
-      if (parts.length >= 3 && parts[2]) {
-        const userId = parts[2];
-        const user = await prisma.user.findUnique({
-          where: { id: userId },
-          select: { id: true, email: true },
-        });
+    const verified = verifySessionToken(token);
 
-        if (user) {
-          req.userId = user.id;
-          req.userEmail = user.email;
-          return next();
-        }
+    if (verified && verified.userId) {
+      const user = await prisma.user.findUnique({
+        where: { id: verified.userId },
+        select: { id: true, email: true },
+      });
+
+      if (user) {
+        req.userId = user.id;
+        req.userEmail = user.email;
+        return next();
       }
     }
 
