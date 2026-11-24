@@ -137,15 +137,15 @@ groupsRouter.post(
 groupsRouter.delete(
   "/:id",
   route(async (req, res) => {
-    const result = await prisma.project.deleteMany({
-      where: {
-        id: req.params.id,
-        userId: req.userId,
-        decisions: { none: {} },
-        plans: { none: {} },
-      },
+    await prisma.$transaction(async tx => {
+      const group = await tx.project.findFirst({where:{id:req.params.id,userId:req.userId}});
+      if (!group) throw fail("Group not found.",404);
+      await tx.chatMessage.deleteMany({where:{projectId:group.id,userId:req.userId}});
+      await tx.decision.updateMany({where:{projectId:group.id},data:{parentId:null,planId:null}});
+      await tx.decision.deleteMany({where:{projectId:group.id}});
+      await tx.branchPlan.deleteMany({where:{projectId:group.id}});
+      await tx.project.delete({where:{id:group.id}});
     });
-    if (!result.count) throw fail("Only empty groups can be deleted.", 409);
     res.sendStatus(204);
   }),
 );

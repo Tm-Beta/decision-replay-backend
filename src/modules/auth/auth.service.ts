@@ -46,7 +46,7 @@ export class AuthService {
       email_verified?: boolean;
     };
 
-    if (!data.email) {
+    if (!data.email || data.email_verified !== true) {
       throw new Error("Google account did not return a valid email address");
     }
 
@@ -71,7 +71,7 @@ export class AuthService {
           audience: googleClientId,
         });
         const payload = ticket.getPayload();
-        if (payload && payload.email) {
+        if (payload && payload.email && payload.email_verified === true) {
           return {
             email: payload.email,
             name: payload.name || payload.email.split("@")[0],
@@ -84,25 +84,7 @@ export class AuthService {
       }
     }
 
-    // Fallback parser if GOOGLE_CLIENT_ID is not configured in local development
-    try {
-      const parts = idToken.split(".");
-      if (parts.length >= 2) {
-        const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf-8"));
-        if (payload.email) {
-          return {
-            email: payload.email,
-            name: payload.name || payload.email.split("@")[0],
-            avatar: payload.picture,
-            googleId: payload.sub,
-          };
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    throw new Error("Unable to parse or verify Google token");
+    throw new Error("Unable to verify Google token");
   }
 
   async loginWithGoogle(data: GoogleLoginDto): Promise<AuthResponse> {
