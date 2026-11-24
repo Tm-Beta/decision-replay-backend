@@ -10,10 +10,22 @@ export const authRouter = Router();
  */
 authRouter.post("/google", async (req: Request, res: Response, next: NextFunction) => {
   try {
-    let { email, name, avatar, googleId, credential } = req.body;
+    let { email, name, avatar, googleId, credential, accessToken } = req.body;
 
+    // Verify official Google OAuth2 Access Token if provided
+    if (accessToken && typeof accessToken === "string") {
+      try {
+        const verified = await authService.verifyGoogleAccessToken(accessToken);
+        email = verified.email;
+        name = verified.name;
+        avatar = verified.avatar;
+        googleId = verified.googleId;
+      } catch (tokenErr) {
+        console.warn("Failed to verify Google access token:", tokenErr);
+      }
+    }
     // Decode and verify official Google Identity Services (GSI) credential JWT if provided
-    if (credential && typeof credential === "string") {
+    else if (credential && typeof credential === "string") {
       try {
         const verified = await authService.verifyGoogleToken(credential);
         email = verified.email;
