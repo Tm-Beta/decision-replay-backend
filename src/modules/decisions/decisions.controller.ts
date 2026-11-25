@@ -131,9 +131,10 @@ decisionsRouter.patch(
   "/:id/reminder",
   async (req: AuthenticatedRequest, res, next) => {
     try {
-      const date = new Date(req.body.nextReminder);
+      const nextReminder = req.body?.nextReminder;
+      const date = new Date(nextReminder);
       if (
-        typeof req.body.nextReminder !== "string" ||
+        typeof nextReminder !== "string" ||
         !Number.isFinite(date.getTime()) ||
         date <= new Date()
       ) {
@@ -215,7 +216,7 @@ decisionsRouter.patch("/:id/details", async (req: AuthenticatedRequest, res, nex
 
 decisionsRouter.patch("/:id/project", async (req: AuthenticatedRequest, res, next) => {
   try {
-    const projectId = typeof req.body.projectId === "string" && req.body.projectId ? req.body.projectId : null;
+    const projectId = typeof req.body?.projectId === "string" && req.body.projectId ? req.body.projectId : null;
     await prisma.$transaction(async (tx) => {
       const current = await tx.decision.findFirst({
         where: { id: req.params.id, userId: req.userId },

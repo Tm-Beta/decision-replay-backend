@@ -40,10 +40,7 @@ export class AssumptionsService {
       include: { decision: { select: { userId: true, outcome: { select: { id: true } } } } },
     });
 
-    if (!assumption) {
-      throw new AssumptionError(404, `Assumption ${assumptionId} not found`);
-    }
-    if (userId && assumption.decision.userId !== userId) {
+    if (!assumption || !userId || assumption.decision.userId !== userId) {
       throw new AssumptionError(404, `Assumption ${assumptionId} not found`);
     }
     if (assumption.decision.outcome) {

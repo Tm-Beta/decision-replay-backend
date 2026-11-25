@@ -220,10 +220,11 @@ export class DecisionsService {
    * Retrieves a decision by ID including snapshot verification and relational timeline.
    */
   public async getDecisionById(id: string, userId?: string) {
+    if (!userId) return null;
     const decision = await prisma.decision.findFirst({
       where: {
         id,
-        ...(userId ? { userId } : {}),
+        userId,
       },
       include: {
         snapshot: true,
@@ -263,10 +264,13 @@ export class DecisionsService {
     dto: AppendTimelineDto,
     userId?: string,
   ) {
+    if (!userId) {
+      throw new Error(`Decision ${decisionId} not found`);
+    }
     const decision = await prisma.decision.findFirst({
       where: {
         id: decisionId,
-        ...(userId ? { userId } : {}),
+        userId,
       },
     });
     if (!decision) {
@@ -293,12 +297,13 @@ export class DecisionsService {
     category?: string;
     userId?: string;
   }) {
+    if (!filters.userId) return [];
     return await prisma.decision.findMany({
       where: {
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.projectId ? { projectId: filters.projectId } : {}),
         ...(filters.category ? { category: filters.category } : {}),
-        ...(filters.userId ? { userId: filters.userId } : {}),
+        userId: filters.userId,
       },
       include: {
         outcome: true,

@@ -58,7 +58,7 @@ export function startReviewPushWorker() {
   const publicKey = process.env.VAPID_PUBLIC_KEY;
   const privateKey = process.env.VAPID_PRIVATE_KEY;
   if (!publicKey || !privateKey) return () => {};
-  webPush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:notifications@decision-replay.dev", publicKey, privateKey);
+  webPush.setVapidDetails(process.env.VAPID_SUBJECT || "mailto:notifications@soichose.com", publicKey, privateKey);
   let running = false;
   async function sendDue() {
     if (running) return;
