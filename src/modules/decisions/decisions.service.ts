@@ -24,7 +24,7 @@ export class DecisionsService {
       }) : null;
       if (dto.projectId && !group)
         throw Object.assign(new Error("Group not found."), { statusCode: 404 });
-      if (!group && (dto.parentId || dto.planId || dto.influences.length)) {
+      if (!group && (dto.parentId || dto.planId || dto.influences.length || dto.sourceLinks.length)) {
         throw Object.assign(new Error("Choose a project to link decisions or plans."), { statusCode: 400 });
       }
       const scope = { projectId: group?.id ?? null, userId };
@@ -50,6 +50,20 @@ export class DecisionsService {
           new Error("Choose related decisions in this group."),
           { statusCode: 400 },
         );
+      }
+      if (group && dto.sourceLinks.length) {
+        for (const s of dto.sourceLinks) {
+          if (s.type === "DECISION") {
+            const ok = await tx.decision.findFirst({ where: { id: s.id, projectId: group.id, userId }, select: { id: true } });
+            if (!ok) throw Object.assign(new Error("Source decision not found in this collection."), { statusCode: 400 });
+          } else if (s.type === "OUTCOME") {
+            const ok = await tx.outcomeBranch.findFirst({ where: { id: s.id, projectId: group.id }, select: { id: true } });
+            if (!ok) throw Object.assign(new Error("Source outcome not found in this collection."), { statusCode: 400 });
+          } else if (s.type === "PLAN") {
+            const ok = await tx.branchPlan.findFirst({ where: { id: s.id, projectId: group.id }, select: { id: true } });
+            if (!ok) throw Object.assign(new Error("Source plan not found in this collection."), { statusCode: 400 });
+          }
+        }
       }
       if (
         dto.planId &&
@@ -116,6 +130,49 @@ export class DecisionsService {
           },
         },
       });
+
+      // Record graph edges for DAG connections (parentId, influences, sourceLinks, and promoted plan links)
+      if (group) {
+        const edgeMap = new Map<string, { fromType: string; fromId: string }>();
+        if (dto.parentId) {
+          edgeMap.set(`DECISION:${dto.parentId}`, { fromType: "DECISION", fromId: dto.parentId });
+        }
+        for (const infId of influences) {
+          edgeMap.set(`DECISION:${infId}`, { fromType: "DECISION", fromId: infId });
+        }
+        for (const s of dto.sourceLinks) {
+          if (s.type === "DECISION" || s.type === "OUTCOME") {
+            edgeMap.set(`${s.type}:${s.id}`, { fromType: s.type, fromId: s.id });
+          } else if (s.type === "PLAN") {
+            const promoted = await tx.decision.findFirst({ where: { planId: s.id }, select: { id: true } });
+            if (promoted) edgeMap.set(`DECISION:${promoted.id}`, { fromType: "DECISION", fromId: promoted.id });
+          }
+        }
+        if (dto.planId) {
+          const planIncoming = await tx.graphLink.findMany({
+            where: { projectId: group.id, toType: "PLAN", toId: dto.planId },
+          });
+          for (const link of planIncoming) {
+            if (link.fromType === "DECISION" || link.fromType === "OUTCOME") {
+              edgeMap.set(`${link.fromType}:${link.fromId}`, { fromType: link.fromType, fromId: link.fromId });
+            } else if (link.fromType === "PLAN") {
+              const promoted = await tx.decision.findFirst({ where: { planId: link.fromId }, select: { id: true } });
+              if (promoted) edgeMap.set(`DECISION:${promoted.id}`, { fromType: "DECISION", fromId: promoted.id });
+            }
+          }
+        }
+        for (const edge of edgeMap.values()) {
+          await tx.graphLink.create({
+            data: {
+              projectId: group.id,
+              fromType: edge.fromType,
+              fromId: edge.fromId,
+              toType: "DECISION",
+              toId: decision.id,
+            },
+          });
+        }
+      }
 
       // 2. Prepare snapshot payload and compute SHA-256 hash
       const snapshotPayload = {

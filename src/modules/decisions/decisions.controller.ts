@@ -155,51 +155,129 @@ decisionsRouter.patch(
   },
 );
 
-decisionsRouter.delete("/:id", async (req: AuthenticatedRequest,res,next)=>{
+decisionsRouter.delete("/:id", async (req: AuthenticatedRequest, res, next) => {
   try {
-    await prisma.$transaction(async tx=>{
-      const decision=await tx.decision.findFirst({where:{id:req.params.id,userId:req.userId}});
-      if(!decision)throw Object.assign(new Error("Decision not found."),{statusCode:404});
-      if(!decision.parentId && await tx.branchPlan.count({where:{originId:decision.id,projectId:decision.projectId||""}})) throw Object.assign(new Error("Move or remove plans from this starting decision first."),{statusCode:409});
-      await tx.decision.updateMany({where:{parentId:decision.id,projectId:decision.projectId,userId:req.userId},data:{parentId:decision.parentId}});
-      await tx.branchPlan.updateMany({where:{originId:decision.id,projectId:decision.projectId||""},data:{originId:decision.parentId}});
-      const related=await tx.decision.findMany({where:{userId:req.userId,projectId:decision.projectId},select:{id:true,influences:true}});
-      for(const row of related){try{const ids=JSON.parse(row.influences);if(Array.isArray(ids)&&ids.includes(decision.id))await tx.decision.update({where:{id:row.id},data:{influences:JSON.stringify(ids.filter((id:string)=>id!==decision.id))}})}catch{}}
-      await tx.decision.delete({where:{id:decision.id}});
+    await prisma.$transaction(async tx => {
+      const decision = await tx.decision.findFirst({ where: { id: req.params.id, userId: req.userId }, include: { outcomeBranches: { select: { id: true } } } });
+      if (!decision) throw Object.assign(new Error("Decision not found."), { statusCode: 404 });
+      if (!decision.parentId && await tx.branchPlan.count({ where: { originId: decision.id, projectId: decision.projectId || "" } })) throw Object.assign(new Error("Move or remove plans from this starting decision first."), { statusCode: 409 });
+      await tx.decision.updateMany({ where: { parentId: decision.id, projectId: decision.projectId, userId: req.userId }, data: { parentId: decision.parentId } });
+      await tx.branchPlan.updateMany({ where: { originId: decision.id, projectId: decision.projectId || "" }, data: { originId: decision.parentId } });
+      if (decision.projectId) {
+        const outcomeIds = decision.outcomeBranches.map(o => o.id);
+        await tx.graphLink.deleteMany({
+          where: {
+            projectId: decision.projectId,
+            OR: [
+              { fromType: "DECISION", fromId: decision.id },
+              { toType: "DECISION", toId: decision.id },
+              ...(outcomeIds.length ? [
+                { fromType: "OUTCOME", fromId: { in: outcomeIds } },
+                { toType: "OUTCOME", toId: { in: outcomeIds } },
+              ] : []),
+            ],
+          },
+        });
+      }
+      const related = await tx.decision.findMany({ where: { userId: req.userId, projectId: decision.projectId }, select: { id: true, influences: true } });
+      for (const row of related) { try { const ids = JSON.parse(row.influences); if (Array.isArray(ids) && ids.includes(decision.id)) await tx.decision.update({ where: { id: row.id }, data: { influences: JSON.stringify(ids.filter((id: string) => id !== decision.id)) } }) } catch { } }
+      await tx.decision.delete({ where: { id: decision.id } });
     });
     res.sendStatus(204);
-  }catch(error){next(error)}
+  } catch (error) { next(error) }
 });
 
 
-const editSchema=z.object({
- title:z.string().trim().min(1).max(200),
- choice:z.string().trim().min(1).max(4000),
- expectedOutcome:z.string().max(4000),
- decisionReason:z.string().max(4000),
- beliefRationale:z.string().max(4000),
- confidence:z.number().int().min(1).max(100).nullable(),
- reviewDate:z.string().datetime().nullable()
+const editSchema = z.object({
+  title: z.string().trim().min(1).max(200),
+  choice: z.string().trim().min(1).max(4000),
+  expectedOutcome: z.string().max(4000),
+  decisionReason: z.string().max(4000),
+  beliefRationale: z.string().max(4000),
+  confidence: z.number().int().min(1).max(100).nullable(),
+  reviewDate: z.string().datetime().nullable()
 });
-decisionsRouter.patch("/:id/details",async(req:AuthenticatedRequest,res,next)=>{
- try{
-  const parsed=editSchema.safeParse(req.body);
-  if(!parsed.success){res.status(400).json({message:"Please check the decision details."});return;}
-  await prisma.$transaction(async tx=>{
-   const current=await tx.decision.findFirst({where:{id:req.params.id,userId:req.userId}});
-   if(!current)throw Object.assign(new Error("Decision not found."),{statusCode:404});
-   const nextData={...parsed.data,reviewDate:parsed.data.reviewDate?new Date(parsed.data.reviewDate):null};
-   const fields=["title","choice","expectedOutcome","decisionReason","beliefRationale","confidence","reviewDate"] as const;
-   const changes=fields.flatMap(field=>{
-    const before=current[field],after=nextData[field];
-    const oldValue=before instanceof Date?before.toISOString():before;
-    const newValue=after instanceof Date?after.toISOString():after;
-    return oldValue===newValue?[]:[{field,before:oldValue,after:newValue}];
-   });
-   if(!changes.length)return;
-   await tx.decision.update({where:{id:current.id},data:{...nextData,...(changes.some(c=>c.field==="reviewDate")?{nextReminder:null}:{})}});
-   await tx.timelineEvent.create({data:{decisionId:current.id,eventType:"CONTEXT_SHIFT",title:"Decision details updated",detail:changes.map(c=>c.field+": "+String(c.before??"—")+" → "+String(c.after??"—")).join("\n"),metadataJson:JSON.stringify({changes})}});
-  });
-  res.sendStatus(204);
- }catch(error){next(error)}
+decisionsRouter.patch("/:id/details", async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const parsed = editSchema.safeParse(req.body);
+    if (!parsed.success) { res.status(400).json({ message: "Please check the decision details." }); return; }
+    await prisma.$transaction(async tx => {
+      const current = await tx.decision.findFirst({ where: { id: req.params.id, userId: req.userId } });
+      if (!current) throw Object.assign(new Error("Decision not found."), { statusCode: 404 });
+      const nextData = { ...parsed.data, reviewDate: parsed.data.reviewDate ? new Date(parsed.data.reviewDate) : null };
+      const fields = ["title", "choice", "expectedOutcome", "decisionReason", "beliefRationale", "confidence", "reviewDate"] as const;
+      const changes = fields.flatMap(field => {
+        const before = current[field], after = nextData[field];
+        const oldValue = before instanceof Date ? before.toISOString() : before;
+        const newValue = after instanceof Date ? after.toISOString() : after;
+        return oldValue === newValue ? [] : [{ field, before: oldValue, after: newValue }];
+      });
+      if (!changes.length) return;
+      await tx.decision.update({ where: { id: current.id }, data: { ...nextData, ...(changes.some(c => c.field === "reviewDate") ? { nextReminder: null } : {}) } });
+      await tx.timelineEvent.create({ data: { decisionId: current.id, eventType: "CONTEXT_SHIFT", title: "Decision details updated", detail: changes.map(c => c.field + ": " + String(c.before ?? "—") + " → " + String(c.after ?? "—")).join("\n"), metadataJson: JSON.stringify({ changes }) } });
+    });
+    res.sendStatus(204);
+  } catch (error) { next(error) }
+});
+
+decisionsRouter.patch("/:id/project", async (req: AuthenticatedRequest, res, next) => {
+  try {
+    const projectId = typeof req.body.projectId === "string" && req.body.projectId ? req.body.projectId : null;
+    await prisma.$transaction(async (tx) => {
+      const current = await tx.decision.findFirst({
+        where: { id: req.params.id, userId: req.userId },
+        include: { outcomeBranches: { select: { id: true } } },
+      });
+      if (!current) throw Object.assign(new Error("Decision not found."), { statusCode: 404 });
+      if (projectId) {
+        const project = await tx.project.findFirst({ where: { id: projectId, userId: req.userId }, select: { id: true } });
+        if (!project) throw Object.assign(new Error("Collection not found."), { statusCode: 404 });
+      }
+      if (current.projectId && current.projectId !== projectId) {
+        const outcomeIds = current.outcomeBranches.map((o) => o.id);
+        await tx.graphLink.deleteMany({
+          where: {
+            projectId: current.projectId,
+            OR: [
+              { fromType: "DECISION", fromId: current.id },
+              { toType: "DECISION", toId: current.id },
+              ...(outcomeIds.length
+                ? [
+                    { fromType: "OUTCOME", fromId: { in: outcomeIds } },
+                    { toType: "OUTCOME", toId: { in: outcomeIds } },
+                  ]
+                : []),
+            ],
+          },
+        });
+        await tx.decision.updateMany({
+          where: { parentId: current.id, projectId: current.projectId, userId: req.userId },
+          data: { parentId: current.parentId },
+        });
+      }
+      await tx.decision.update({
+        where: { id: current.id },
+        data: {
+          projectId,
+          parentId: current.projectId === projectId ? current.parentId : null,
+          planId: current.projectId === projectId ? current.planId : null,
+          influences: current.projectId === projectId ? current.influences : "[]",
+        },
+      });
+      if (projectId && current.projectId !== projectId) {
+        await tx.outcomeBranch.updateMany({
+          where: { decisionId: current.id },
+          data: { projectId },
+        });
+        for (const ob of current.outcomeBranches) {
+          await tx.graphLink.create({
+            data: { projectId, fromType: "DECISION", fromId: current.id, toType: "OUTCOME", toId: ob.id },
+          });
+        }
+      }
+    });
+    res.sendStatus(204);
+  } catch (error) {
+    next(error);
+  }
 });
