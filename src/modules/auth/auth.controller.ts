@@ -199,9 +199,8 @@ const importBackupPayloadSchema = z.object({
   version: z.number().int().optional(),
   user: z
     .object({
-      preferences: preferencesSchema.passthrough().optional(),
+      preferences: preferencesSchema.optional(),
     })
-    .passthrough()
     .nullable()
     .optional(),
   projects: z
