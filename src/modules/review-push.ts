@@ -67,7 +67,9 @@ export function startReviewPushWorker() {
       const now = new Date();
       const decisions = await prisma.decision.findMany({
         where: {
-          outcome: null, user: { reviewPushSubscriptions: { some: {} } },
+          outcome: null,
+          outcomeBranches: { none: {} },
+          user: { reviewPushSubscriptions: { some: {} } },
           OR: [{ nextReminder: { lte: now } }, { nextReminder: null, reviewDate: { lte: now } }],
         },
         select: {

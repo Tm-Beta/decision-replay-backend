@@ -15,6 +15,7 @@ import { CreateDecisionSchema } from "./dto/create-decision.dto";
 import { AppendTimelineSchema } from "./dto/append-timeline.dto";
 import { validateBody } from "../../common/guards/validation.guard";
 import { AuthenticatedRequest } from "../../common/guards/auth.guard";
+import { bridgeAndDeleteNodeLinks } from "../graph-helpers";
 
 export const decisionsRouter = Router();
 
@@ -64,6 +65,7 @@ decisionsRouter.get(
           where: {
             userId: req.userId,
             outcome: null,
+            outcomeBranches: { none: {} },
             OR: [
               { nextReminder: { lte: now } },
               { nextReminder: null, reviewDate: { lte: now } },
@@ -164,20 +166,11 @@ decisionsRouter.delete("/:id", async (req: AuthenticatedRequest, res, next) => {
       await tx.decision.updateMany({ where: { parentId: decision.id, projectId: decision.projectId, userId: req.userId }, data: { parentId: decision.parentId } });
       await tx.branchPlan.updateMany({ where: { originId: decision.id, projectId: decision.projectId || "" }, data: { originId: decision.parentId } });
       if (decision.projectId) {
-        const outcomeIds = decision.outcomeBranches.map(o => o.id);
-        await tx.graphLink.deleteMany({
-          where: {
-            projectId: decision.projectId,
-            OR: [
-              { fromType: "DECISION", fromId: decision.id },
-              { toType: "DECISION", toId: decision.id },
-              ...(outcomeIds.length ? [
-                { fromType: "OUTCOME", fromId: { in: outcomeIds } },
-                { toType: "OUTCOME", toId: { in: outcomeIds } },
-              ] : []),
-            ],
-          },
-        });
+        const targets = [
+          { type: "DECISION", id: decision.id },
+          ...decision.outcomeBranches.map((o) => ({ type: "OUTCOME", id: o.id })),
+        ];
+        await bridgeAndDeleteNodeLinks(tx, decision.projectId, targets);
       }
       const related = await tx.decision.findMany({ where: { userId: req.userId, projectId: decision.projectId }, select: { id: true, influences: true } });
       for (const row of related) { try { const ids = JSON.parse(row.influences); if (Array.isArray(ids) && ids.includes(decision.id)) await tx.decision.update({ where: { id: row.id }, data: { influences: JSON.stringify(ids.filter((id: string) => id !== decision.id)) } }) } catch { } }
@@ -234,22 +227,11 @@ decisionsRouter.patch("/:id/project", async (req: AuthenticatedRequest, res, nex
         if (!project) throw Object.assign(new Error("Collection not found."), { statusCode: 404 });
       }
       if (current.projectId && current.projectId !== projectId) {
-        const outcomeIds = current.outcomeBranches.map((o) => o.id);
-        await tx.graphLink.deleteMany({
-          where: {
-            projectId: current.projectId,
-            OR: [
-              { fromType: "DECISION", fromId: current.id },
-              { toType: "DECISION", toId: current.id },
-              ...(outcomeIds.length
-                ? [
-                    { fromType: "OUTCOME", fromId: { in: outcomeIds } },
-                    { toType: "OUTCOME", toId: { in: outcomeIds } },
-                  ]
-                : []),
-            ],
-          },
-        });
+        const targets = [
+          { type: "DECISION", id: current.id },
+          ...current.outcomeBranches.map((o) => ({ type: "OUTCOME", id: o.id })),
+        ];
+        await bridgeAndDeleteNodeLinks(tx, current.projectId, targets);
         await tx.decision.updateMany({
           where: { parentId: current.id, projectId: current.projectId, userId: req.userId },
           data: { parentId: current.parentId },
@@ -274,6 +256,8 @@ decisionsRouter.patch("/:id/project", async (req: AuthenticatedRequest, res, nex
             data: { projectId, fromType: "DECISION", fromId: current.id, toType: "OUTCOME", toId: ob.id },
           });
         }
+      } else if (!projectId && current.projectId) {
+        await tx.outcomeBranch.deleteMany({ where: { decisionId: current.id } });
       }
     });
     res.sendStatus(204);

@@ -51,6 +51,7 @@ model Project {
 model BranchPlan {
   status String @default("OPEN")
   nodeType String @default("DECISION") // "DECISION" | "OUTCOME"
+  joinRule String @default("ANY") // "ANY" | "ALL"
   id String @id @default(cuid())
   projectId String
   project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -60,6 +61,7 @@ model BranchPlan {
   expectedOutcome String
   createdAt DateTime @default(now())
   decision Decision?
+  outcomeBranch OutcomeBranch? @relation("PlanOutcome")
   @@index([projectId])
 }
 
@@ -69,6 +71,8 @@ model OutcomeBranch {
   project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   decisionId String
   decision   Decision @relation(fields: [decisionId], references: [id], onDelete: Cascade)
+  planId     String?  @unique
+  plan       BranchPlan? @relation("PlanOutcome", fields: [planId], references: [id], onDelete: SetNull)
   title      String
   detail     String   @default("")
   isPrimary  Boolean  @default(false)
@@ -101,6 +105,7 @@ model Decision {
   branches Decision[] @relation("Branches")
   planId String? @unique
   plan BranchPlan? @relation(fields: [planId], references: [id], onDelete: Restrict)
+  joinRule String @default("ANY") // "ANY" | "ALL"
   @@index([projectId, parentId])
   id              String          @id @default(cuid())
   title           String
