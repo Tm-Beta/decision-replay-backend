@@ -16,7 +16,7 @@ import { AuthenticatedRequest } from "../../common/guards/auth.guard";
 export const assumptionsRouter = Router();
 
 const ValidateAssumptionSchema = z.object({
-  metricActual: z.string().optional(),
+  metricActual: z.string().max(500).optional(),
   validated: z.boolean().optional(), // omitted => compared automatically with metricTarget
 });
 

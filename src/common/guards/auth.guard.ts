@@ -35,7 +35,7 @@ export async function authGuard(
         select: { id: true, email: true },
       });
 
-      if (user) {
+      if (user && (!verified.email || user.email.toLowerCase() === verified.email.toLowerCase())) {
         req.userId = user.id;
         req.userEmail = user.email;
         return next();

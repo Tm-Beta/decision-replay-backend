@@ -22,13 +22,47 @@ export interface AuthResponse {
   isNewUser: boolean;
 }
 
+const FORBIDDEN_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function sanitizeSafeObject(input: unknown, depth = 0): Record<string, unknown> {
+  if (!input || typeof input !== "object" || Array.isArray(input) || depth > 4) {
+    return {};
+  }
+  const clean: Record<string, unknown> = Object.create(null);
+  for (const [k, v] of Object.entries(input as Record<string, unknown>)) {
+    if (FORBIDDEN_KEYS.has(k)) continue;
+    if (v && typeof v === "object" && !Array.isArray(v)) {
+      clean[k] = sanitizeSafeObject(v, depth + 1);
+    } else if (!Array.isArray(v)) {
+      clean[k] = v;
+    }
+  }
+  return { ...clean };
+}
+
+function sanitizeAvatarUrl(raw?: string | null): string | null {
+  if (!raw || typeof raw !== "string") return null;
+  try {
+    const parsed = new URL(raw);
+    if (parsed.protocol !== "https:") return null;
+    const h = parsed.hostname.toLowerCase();
+    if (
+      h === "lh3.googleusercontent.com" ||
+      h.endsWith(".googleusercontent.com") ||
+      h === "api.dicebear.com"
+    ) {
+      return parsed.toString().slice(0, 1024);
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function parsePreferences(raw?: string | null): Record<string, unknown> {
   if (!raw) return {};
   try {
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? (parsed as Record<string, unknown>)
-      : {};
+    return sanitizeSafeObject(JSON.parse(raw));
   } catch {
     return {};
   }
@@ -102,8 +136,10 @@ export class AuthService {
 
   async loginWithGoogle(data: GoogleLoginDto): Promise<AuthResponse> {
     const email = data.email.trim().toLowerCase();
-    const name = data.name.trim() || email.split("@")[0];
-    const avatar = data.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
+    const name = data.name.trim().slice(0, 120) || email.split("@")[0];
+    const avatar =
+      sanitizeAvatarUrl(data.avatar) ||
+      `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(name)}`;
 
     const existingUser = await prisma.user.findUnique({
       where: { email },
@@ -602,8 +638,8 @@ export class AuthService {
           where: { id: userId },
           select: { preferences: true },
         });
-        const prevPrefs = parsePreferences(current?.preferences) as Record<string, unknown>;
-        const nextPrefs = backup.preferences as Record<string, unknown>;
+        const prevPrefs = parsePreferences(current?.preferences);
+        const nextPrefs = sanitizeSafeObject(backup.preferences);
         const merged = {
           ...prevPrefs,
           ...nextPrefs,
