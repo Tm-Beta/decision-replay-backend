@@ -133,6 +133,28 @@ export class ReplayService {
 
         await tx.decision.update({ where: { id: decisionId }, data: { status: "REPLAYED" } });
 
+        if (decision.projectId) {
+          const shortTitle = dto.actualOutcome.trim().split(/[\n.]/)[0]?.slice(0, 80) || dto.actualOutcome.trim().slice(0, 80);
+          const ob = await tx.outcomeBranch.create({
+            data: {
+              projectId: decision.projectId,
+              decisionId,
+              title: shortTitle,
+              detail: dto.actualOutcome.trim(),
+              isPrimary: true,
+            },
+          });
+          await tx.graphLink.create({
+            data: {
+              projectId: decision.projectId,
+              fromType: "DECISION",
+              fromId: decisionId,
+              toType: "OUTCOME",
+              toId: ob.id,
+            },
+          });
+        }
+
         await tx.timelineEvent.create({
           data: {
             decisionId,

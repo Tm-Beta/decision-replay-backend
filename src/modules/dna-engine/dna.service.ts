@@ -44,7 +44,7 @@ export class DnaService {
               title: d.title,
               confidence: d.confidence, // set at lock time; the API has no way to edit it
               outcome: {
-                outcomeScore: null, // Personal ratings do not establish an observed probability.
+                outcomeScore: d.outcome.outcomeScore,
                 predictionAccuracy: targetMatchPercent(d.assumptions),
                 unexpectedFactors: d.outcome.unexpectedFactors,
               },
