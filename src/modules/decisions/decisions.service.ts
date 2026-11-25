@@ -65,17 +65,17 @@ export class DecisionsService {
           }
         }
       }
-      if (
-        dto.planId &&
-        !(await tx.branchPlan.findFirst({
-          where: {
-            id: dto.planId,
-            projectId: group?.id,
-            decision: null,
-            status: "OPEN",
-          },
-        }))
-      ) {
+      const plan = dto.planId
+        ? await tx.branchPlan.findFirst({
+            where: {
+              id: dto.planId,
+              projectId: group?.id,
+              decision: null,
+              status: "OPEN",
+            },
+          })
+        : null;
+      if (dto.planId && !plan) {
         throw Object.assign(new Error("This planned branch is unavailable."), {
           statusCode: 409,
         });
@@ -90,6 +90,7 @@ export class DecisionsService {
           outcomeKnown: dto.outcomeKnown,
           parentId: dto.parentId,
           planId: dto.planId,
+          joinRule: plan?.joinRule ?? "ANY",
           userId: userId,
           choice: dto.choice,
           context: dto.context,
@@ -144,8 +145,13 @@ export class DecisionsService {
           if (s.type === "DECISION" || s.type === "OUTCOME") {
             edgeMap.set(`${s.type}:${s.id}`, { fromType: s.type, fromId: s.id });
           } else if (s.type === "PLAN") {
-            const promoted = await tx.decision.findFirst({ where: { planId: s.id }, select: { id: true } });
-            if (promoted) edgeMap.set(`DECISION:${promoted.id}`, { fromType: "DECISION", fromId: promoted.id });
+            const promotedDec = await tx.decision.findFirst({ where: { planId: s.id }, select: { id: true } });
+            if (promotedDec) {
+              edgeMap.set(`DECISION:${promotedDec.id}`, { fromType: "DECISION", fromId: promotedDec.id });
+            } else {
+              const promotedOut = await tx.outcomeBranch.findFirst({ where: { planId: s.id }, select: { id: true } });
+              if (promotedOut) edgeMap.set(`OUTCOME:${promotedOut.id}`, { fromType: "OUTCOME", fromId: promotedOut.id });
+            }
           }
         }
         if (dto.planId) {
@@ -156,8 +162,13 @@ export class DecisionsService {
             if (link.fromType === "DECISION" || link.fromType === "OUTCOME") {
               edgeMap.set(`${link.fromType}:${link.fromId}`, { fromType: link.fromType, fromId: link.fromId });
             } else if (link.fromType === "PLAN") {
-              const promoted = await tx.decision.findFirst({ where: { planId: link.fromId }, select: { id: true } });
-              if (promoted) edgeMap.set(`DECISION:${promoted.id}`, { fromType: "DECISION", fromId: promoted.id });
+              const promotedDec = await tx.decision.findFirst({ where: { planId: link.fromId }, select: { id: true } });
+              if (promotedDec) {
+                edgeMap.set(`DECISION:${promotedDec.id}`, { fromType: "DECISION", fromId: promotedDec.id });
+              } else {
+                const promotedOut = await tx.outcomeBranch.findFirst({ where: { planId: link.fromId }, select: { id: true } });
+                if (promotedOut) edgeMap.set(`OUTCOME:${promotedOut.id}`, { fromType: "OUTCOME", fromId: promotedOut.id });
+              }
             }
           }
         }

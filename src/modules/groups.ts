@@ -1,6 +1,7 @@
 import { Router, Response } from "express";
 import { AuthenticatedRequest } from "../common/guards/auth.guard";
 import { prisma } from "../config/database";
+import { bridgeAndDeleteNodeLinks } from "./graph-helpers";
 
 export const groupsRouter = Router();
 const fail = (message: string, statusCode: number) =>
@@ -255,7 +256,7 @@ groupsRouter.get(
     });
     if (!group) throw fail("Group not found.", 404);
     const pendingRemindersCount = group.decisions.filter(
-      (d) => !d.outcome && d.reviewDate,
+      (d) => !d.outcome && !d.outcomeBranches?.length && d.reviewDate,
     ).length;
     res.json({ ...group, pendingRemindersCount });
   }),
@@ -310,6 +311,7 @@ groupsRouter.post(
         data: {
           projectId,
           nodeType,
+          joinRule: req.body.joinRule === "ALL" ? "ALL" : "ANY",
           originId: firstDecision,
           parentPlanId: firstPlan,
           title: required(req.body.title, nodeType === "OUTCOME" ? "a possible outcome" : "a planned choice"),
@@ -338,16 +340,25 @@ groupsRouter.post(
 groupsRouter.patch(
   "/:id/plans/:planId",
   route(async (req, res) => {
-    const { status, title, expectedOutcome, nodeType } = req.body;
+    const { status, title, expectedOutcome, nodeType, joinRule } = req.body;
     if (status !== undefined && !["OPEN", "DEFERRED", "DROPPED"].includes(status))
       throw fail("Choose a plan status.", 400);
     if (nodeType !== undefined && !["DECISION", "OUTCOME"].includes(nodeType))
       throw fail("Choose either a decision or an outcome.", 400);
-    if (status === undefined && title === undefined && expectedOutcome === undefined && nodeType === undefined)
+    if (joinRule !== undefined && !["ANY", "ALL"].includes(joinRule))
+      throw fail("Choose ANY or ALL.", 400);
+    if (
+      status === undefined &&
+      title === undefined &&
+      expectedOutcome === undefined &&
+      nodeType === undefined &&
+      joinRule === undefined
+    )
       throw fail("Enter a change to the plan.", 400);
     const data = {
       status,
       nodeType,
+      joinRule,
       title: title === undefined ? undefined : required(title, "a planned step"),
       expectedOutcome: expectedOutcome === undefined ? undefined : String(expectedOutcome).trim(),
     };
@@ -365,6 +376,122 @@ groupsRouter.patch(
   }),
 );
 
+groupsRouter.post(
+  "/:id/plans/:planId/promote-outcome",
+  route(async (req, res) => {
+    const projectId = req.params.id;
+    const planId = req.params.planId;
+    const { decisionId } = req.body as { decisionId?: string };
+
+    const result = await prisma.$transaction(async (tx) => {
+      const plan = await tx.branchPlan.findFirst({
+        where: {
+          id: planId,
+          projectId,
+          project: { userId: req.userId },
+          decision: null,
+          outcomeBranch: null,
+        },
+      });
+      if (!plan) throw fail("This planned outcome is unavailable or already recorded.", 409);
+
+      const decId = required(decisionId, "a decision");
+      const decision = await tx.decision.findFirst({
+        where: { id: decId, projectId, userId: req.userId },
+        select: { id: true },
+      });
+      if (!decision) throw fail("Decision not found in this collection.", 404);
+
+      const outcomeBranch = await tx.outcomeBranch.create({
+        data: {
+          projectId,
+          decisionId: decision.id,
+          planId: plan.id,
+          title: plan.title,
+          detail: plan.expectedOutcome || "",
+          isPrimary: false,
+        },
+      });
+
+      await tx.graphLink.upsert({
+        where: {
+          projectId_fromType_fromId_toType_toId: {
+            projectId,
+            fromType: "DECISION",
+            fromId: decision.id,
+            toType: "OUTCOME",
+            toId: outcomeBranch.id,
+          },
+        },
+        update: {},
+        create: {
+          projectId,
+          fromType: "DECISION",
+          fromId: decision.id,
+          toType: "OUTCOME",
+          toId: outcomeBranch.id,
+        },
+      });
+
+      // Migrate all outgoing follow-up connections from this planned outcome to the real OutcomeBranch
+      const outgoingLinks = await tx.graphLink.findMany({
+        where: { projectId, fromType: "PLAN", fromId: plan.id },
+      });
+      const childPlans = await tx.branchPlan.findMany({
+        where: { projectId, parentPlanId: plan.id },
+        select: { id: true },
+      });
+
+      const targets: { type: string; id: string }[] = [
+        ...outgoingLinks.map((l) => ({ type: l.toType, id: l.toId })),
+        ...childPlans.map((c) => ({ type: "PLAN", id: c.id })),
+      ];
+
+      for (const t of targets) {
+        await tx.graphLink.upsert({
+          where: {
+            projectId_fromType_fromId_toType_toId: {
+              projectId,
+              fromType: "OUTCOME",
+              fromId: outcomeBranch.id,
+              toType: t.type,
+              toId: t.id,
+            },
+          },
+          update: {},
+          create: {
+            projectId,
+            fromType: "OUTCOME",
+            fromId: outcomeBranch.id,
+            toType: t.type,
+            toId: t.id,
+          },
+        });
+      }
+
+      // Clean up old PLAN-scoped links so the graph stays tidy
+      await tx.graphLink.deleteMany({
+        where: {
+          projectId,
+          OR: [
+            { fromType: "PLAN", fromId: plan.id },
+            { toType: "PLAN", toId: plan.id },
+          ],
+        },
+      });
+
+      await tx.branchPlan.update({
+        where: { id: plan.id },
+        data: { status: "CONVERTED" },
+      });
+
+      return outcomeBranch;
+    });
+
+    res.status(201).json(result);
+  }),
+);
+
 groupsRouter.delete(
   "/:id/plans/:planId",
   route(async (req, res) => {
@@ -378,15 +505,7 @@ groupsRouter.delete(
         where: { ...scope, parentPlanId: plan.id },
         data: { parentPlanId: plan.parentPlanId, originId: plan.originId },
       });
-      await tx.graphLink.deleteMany({
-        where: {
-          projectId: req.params.id,
-          OR: [
-            { fromType: "PLAN", fromId: plan.id },
-            { toType: "PLAN", toId: plan.id },
-          ],
-        },
-      });
+      await bridgeAndDeleteNodeLinks(tx, req.params.id, [{ type: "PLAN", id: plan.id }]);
       await tx.branchPlan.delete({ where: { id: plan.id } });
     });
     res.sendStatus(204);
@@ -470,15 +589,7 @@ groupsRouter.delete(
         },
       });
       if (!outcome) throw fail("Outcome not found.", 404);
-      await tx.graphLink.deleteMany({
-        where: {
-          projectId: req.params.id,
-          OR: [
-            { fromType: "OUTCOME", fromId: outcome.id },
-            { toType: "OUTCOME", toId: outcome.id },
-          ],
-        },
-      });
+      await bridgeAndDeleteNodeLinks(tx, req.params.id, [{ type: "OUTCOME", id: outcome.id }]);
       await tx.outcomeBranch.delete({ where: { id: outcome.id } });
     });
     res.sendStatus(204);
@@ -628,6 +739,33 @@ groupsRouter.post(
       });
       await unlinkLegacyFields(tx, req.params.id, fromType, fromId, toType, toId);
     });
+    res.sendStatus(204);
+  }),
+);
+
+groupsRouter.patch(
+  "/:id/nodes/:nodeType/:nodeId/join-rule",
+  route(async (req, res) => {
+    const { id: projectId, nodeType, nodeId } = req.params;
+    const { joinRule } = req.body as { joinRule?: string };
+    if (joinRule !== "ANY" && joinRule !== "ALL") {
+      throw fail("Choose ANY or ALL.", 400);
+    }
+    if (nodeType === "DECISION") {
+      const updated = await prisma.decision.updateMany({
+        where: { id: nodeId, projectId, userId: req.userId },
+        data: { joinRule },
+      });
+      if (!updated.count) throw fail("Decision not found in this collection.", 404);
+    } else if (nodeType === "PLAN") {
+      const updated = await prisma.branchPlan.updateMany({
+        where: { id: nodeId, projectId, project: { userId: req.userId } },
+        data: { joinRule },
+      });
+      if (!updated.count) throw fail("Plan not found in this collection.", 404);
+    } else {
+      throw fail("Join rule only applies to decisions and planned steps.", 400);
+    }
     res.sendStatus(204);
   }),
 );
