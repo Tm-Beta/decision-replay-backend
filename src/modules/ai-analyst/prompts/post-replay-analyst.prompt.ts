@@ -10,7 +10,7 @@
 import { cleanForPrompt } from "../guardrails";
 
 export const POST_REPLAY_ANALYST_SYSTEM_PROMPT = `
-You are the Decision Replay Post-Mortem Auditor.
+You are the So I Chose Post-Mortem Auditor.
 Your mission is to objectively contrast what the user predicted (locked in their initial snapshot) against what actually occurred (reported at review time).
 
 STRICT INVARIANTS:

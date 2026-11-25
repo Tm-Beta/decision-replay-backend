@@ -19,14 +19,15 @@ datasource db {
 
 model User {
   reviewPushSubscriptions ReviewPushSubscription[]
-  id        String     @id @default(cuid())
-  email     String     @unique
-  name      String
-  avatar    String?
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
-  projects  Project[]
-  decisions Decision[]
+  id          String     @id @default(cuid())
+  email       String     @unique
+  name        String
+  avatar      String?
+  preferences String     @default("{}")
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  projects    Project[]
+  decisions   Decision[]
 }
 
 model Project {
@@ -215,14 +216,28 @@ model Analysis {
   createdAt  DateTime @default(now())
 }
 
-model ChatMessage {
-  id String @id @default(cuid())
-  userId String
+model ChatSession {
+  id        String        @id @default(cuid())
+  userId    String
   projectId String?
-  role String
-  content String
-  createdAt DateTime @default(now())
+  title     String        @default("New chat")
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+  messages  ChatMessage[]
+  @@index([userId, updatedAt])
+}
+
+model ChatMessage {
+  id        String       @id @default(cuid())
+  userId    String
+  projectId String?
+  sessionId String?
+  session   ChatSession? @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  role      String
+  content   String
+  createdAt DateTime     @default(now())
   @@index([userId, projectId, createdAt])
+  @@index([sessionId, createdAt])
 }
 
 model ChatUsage {

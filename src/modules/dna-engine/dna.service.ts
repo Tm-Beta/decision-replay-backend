@@ -21,9 +21,12 @@ export class DnaService {
    * Only replayed decisions (an outcome exists) are included.
    */
   public async getDecisionDnaProfile(userId?: string): Promise<DnaProfile> {
+    if (!userId) {
+      return computeDnaProfile([]);
+    }
     const decisions = await prisma.decision.findMany({
       where: {
-        ...(userId ? { userId } : {}),
+        userId,
         status: "REPLAYED",
         outcome: { isNot: null },
       },
