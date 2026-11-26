@@ -87,5 +87,6 @@ jobs:
           script: |
             set -euo pipefail
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-            /opt/soichose/blue-green-deploy.sh backend "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
+            SHORT_SHA=$(echo "${{ github.sha }}" | cut -c1-7)
+            /opt/soichose/blue-green-deploy.sh backend "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${SHORT_SHA}"
 
