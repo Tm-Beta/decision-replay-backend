@@ -14,3 +14,4 @@ chmod 600 "$OUT_FILE"
 # Keep last 14 days
 find "$BACKUP_DIR" -name "soichose-pg-*.sql.gz" -mtime +14 -delete
 echo "[Backup] Saved $OUT_FILE"
+
