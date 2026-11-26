@@ -38,3 +38,4 @@ echo "  2. Copy deploy/nginx/soichose.conf to /etc/nginx/sites-available/soichos
 echo "  3. Copy deploy/docker-compose.prod.yml & deploy/.env.production.example -> /opt/soichose/.env and fill secrets"
 echo "  4. Authenticate GHCR (`echo \$CR_PAT | docker login ghcr.io -u Tm-Beta --password-stdin`) and run:"
 echo "     cd /opt/soichose && docker compose -f docker-compose.prod.yml up -d"
+
