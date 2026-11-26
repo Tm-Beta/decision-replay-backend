@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: soichose-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-soichose}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-soichose}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=64MB
+      - -c
+      - effective_cache_size=128MB
+      - -c
+      - work_mem=4MB
+      - -c
+      - max_connections=40
+    volumes:
+      - soichose_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-soichose} -d $${POSTGRES_DB:-soichose}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 192m
+    networks:
+      - soichose-net
+
+  backend:
+    image: ghcr.io/tm-beta/soichose-backend:latest
+    container_name: soichose-backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      DATABASE_URL: postgresql://${POSTGRES_USER:-soichose}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-soichose}?schema=public
+      FRONTEND_URL: ${FRONTEND_URL:-https://app.soichose.com}
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env}
+      BACKUP_SECRET: ${BACKUP_SECRET:?Set BACKUP_SECRET in .env}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID in .env}
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_MODEL: ${AI_MODEL:-openai/gpt-4o}
+      AI_GATEWAY_URL: ${AI_GATEWAY_URL:-https://api.openai.com/v1}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-1.5-flash}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
+      VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:notifications@soichose.com}
+    ports:
+      - "127.0.0.1:4000:4000"
+    mem_limit: 256m
+    networks:
+      - soichose-net
+
+  frontend:
+    image: ghcr.io/tm-beta/soichose-frontend:latest
+    container_name: soichose-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    ports:
+      - "127.0.0.1:3000:3000"
+    mem_limit: 192m
+    networks:
+      - soichose-net
+
+volumes:
+  soichose_pgdata:
+
+networks:
+  soichose-net:
+    driver: bridge
+

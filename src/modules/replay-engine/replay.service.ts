@@ -58,8 +58,7 @@ export class ReplayService {
       include: { assumptions: true, preMortems: true, snapshot: true, outcome: true },
     });
 
-    if (!decision) throw new ReplayError(404, `Decision ${decisionId} not found`);
-    if (userId && decision.userId !== userId) {
+    if (!decision || !userId || decision.userId !== userId) {
       throw new ReplayError(404, `Decision ${decisionId} not found`);
     }
     if (decision.outcome) throw new ReplayError(409, "Outcome already recorded for this decision");
@@ -207,10 +206,7 @@ export class ReplayService {
       },
     });
 
-    if (!decision || !decision.outcome) {
-      return null;
-    }
-    if (userId && decision.userId !== userId) {
+    if (!decision || !decision.outcome || !userId || decision.userId !== userId) {
       return null;
     }
 
@@ -252,7 +248,10 @@ export class ReplayService {
    * Aggregates cognitive pattern summaries across all completed replays for the user.
    */
   public async getPatternSummary(userId?: string) {
-    const count = await prisma.outcome.count({ where: userId ? { decision: { userId } } : {} });
+    if (!userId) {
+      return { totalDecisionsEvaluated: 0, overallPredictionAccuracy: null, calibrationBias: "INSUFFICIENT_DATA", detectedPatterns: [] };
+    }
+    const count = await prisma.outcome.count({ where: { decision: { userId } } });
     return { totalDecisionsEvaluated: count, overallPredictionAccuracy: null, calibrationBias: "INSUFFICIENT_DATA", detectedPatterns: [] };
   }
 }

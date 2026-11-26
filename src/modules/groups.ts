@@ -13,10 +13,10 @@ const route =
       handle(req, res).catch(next);
     };
 
-function required(value: unknown, label: string) {
+function required(value: unknown, label: string, maxLength = 300) {
   if (typeof value !== "string" || !value.trim())
     throw fail("Enter " + label + ".", 400);
-  return value.trim();
+  return value.trim().slice(0, maxLength);
 }
 
 const VALID_NODE_TYPES = new Set(["DECISION", "OUTCOME", "PLAN"]);
@@ -136,7 +136,7 @@ groupsRouter.post(
       await prisma.project.create({
         data: {
           userId: req.userId,
-          name: required(req.body.name, "a group name"),
+          name: required(req.body?.name, "a group name", 200),
           purpose: "",
           desiredOutcome: "",
         },
@@ -150,7 +150,7 @@ groupsRouter.patch(
   route(async (req, res) => {
     const result = await prisma.project.updateMany({
       where: { id: req.params.id, userId: req.userId },
-      data: { name: required(req.body.name, "a group name") },
+      data: { name: required(req.body?.name, "a group name", 200) },
     });
     if (!result.count) throw fail("Group not found.", 404);
     res.sendStatus(204);
@@ -211,6 +211,7 @@ groupsRouter.delete(
       const group = await tx.project.findFirst({ where: { id: req.params.id, userId: req.userId } });
       if (!group) throw fail("Group not found.", 404);
       await tx.chatMessage.deleteMany({ where: { projectId: group.id, userId: req.userId } });
+      await tx.chatSession.deleteMany({ where: { projectId: group.id, userId: req.userId } });
       await tx.graphLink.deleteMany({ where: { projectId: group.id } });
       await tx.outcomeBranch.deleteMany({ where: { projectId: group.id } });
       await tx.decision.updateMany({ where: { projectId: group.id }, data: { parentId: null, planId: null } });
@@ -271,7 +272,7 @@ groupsRouter.post(
       parentPlanId,
       nodeType = "DECISION",
       parentNodes,
-    } = req.body as {
+    } = (req.body || {}) as {
       originId?: string;
       parentPlanId?: string;
       nodeType?: string;
@@ -340,7 +341,7 @@ groupsRouter.post(
 groupsRouter.patch(
   "/:id/plans/:planId",
   route(async (req, res) => {
-    const { status, title, expectedOutcome, nodeType, joinRule } = req.body;
+    const { status, title, expectedOutcome, nodeType, joinRule } = req.body || {};
     if (status !== undefined && !["OPEN", "DEFERRED", "DROPPED"].includes(status))
       throw fail("Choose a plan status.", 400);
     if (nodeType !== undefined && !["DECISION", "OUTCOME"].includes(nodeType))
@@ -722,12 +723,24 @@ groupsRouter.delete(
 groupsRouter.post(
   "/:id/unlink",
   route(async (req, res) => {
-    const { fromType, fromId, toType, toId } = req.body as {
-      fromType: string;
-      fromId: string;
-      toType: string;
-      toId: string;
+    const { fromType, fromId, toType, toId } = (req.body || {}) as {
+      fromType?: string;
+      fromId?: string;
+      toType?: string;
+      toId?: string;
     };
+    if (
+      !fromType ||
+      !toType ||
+      !VALID_NODE_TYPES.has(fromType) ||
+      !VALID_NODE_TYPES.has(toType) ||
+      typeof fromId !== "string" ||
+      typeof toId !== "string" ||
+      !fromId ||
+      !toId
+    ) {
+      throw fail("Invalid connection payload.", 400);
+    }
     await prisma.$transaction(async (tx) => {
       const project = await tx.project.findFirst({
         where: { id: req.params.id, userId: req.userId },

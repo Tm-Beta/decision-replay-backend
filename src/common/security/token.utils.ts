@@ -16,12 +16,13 @@ export interface TokenPayload {
 }
 
 /**
- * Generates a cryptographically signed HMAC-SHA256 session token.
+ * Generates a cryptographically signed HMAC-SHA256 session token with random nonce.
  * Format: usr_tok.<base64url_payload>.<hmac_signature>
  */
 export function generateSessionToken(userId: string, email: string): string {
   const timestamp = Date.now();
-  const payloadString = `${userId}:${email}:${timestamp}`;
+  const nonce = crypto.randomBytes(8).toString("hex");
+  const payloadString = `${userId}:${email}:${timestamp}:${nonce}`;
   const encodedPayload = Buffer.from(payloadString, "utf-8").toString("base64url");
   const signature = crypto
     .createHmac("sha256", AUTH_SECRET)

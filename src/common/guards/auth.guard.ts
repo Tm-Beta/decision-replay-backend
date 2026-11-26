@@ -16,7 +16,7 @@ export async function authGuard(
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     res.status(401).json({
-      type: "https://decision-replay.dev/errors/unauthorized",
+      type: "https://soichose.com/errors/unauthorized",
       title: "Unauthorized",
       status: 401,
       detail: "Authentication required. Please sign in with your Google account.",
@@ -35,7 +35,7 @@ export async function authGuard(
         select: { id: true, email: true },
       });
 
-      if (user) {
+      if (user && (!verified.email || user.email.toLowerCase() === verified.email.toLowerCase())) {
         req.userId = user.id;
         req.userEmail = user.email;
         return next();
@@ -43,7 +43,7 @@ export async function authGuard(
     }
 
     res.status(401).json({
-      type: "https://decision-replay.dev/errors/invalid-token",
+      type: "https://soichose.com/errors/invalid-token",
       title: "Unauthorized",
       status: 401,
       detail: "Invalid or expired session. Please sign in again with Google.",
