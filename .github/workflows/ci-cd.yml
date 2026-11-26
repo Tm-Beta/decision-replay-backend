@@ -78,7 +78,7 @@ jobs:
     if: github.ref == 'refs/heads/main' && vars.VPS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     steps:
-      - name: Deploy backend container to DigitalOcean VPS
+      - name: Blue-green zero-downtime deploy backend to VPS
         uses: appleboy/ssh-action@v1.2.0
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -87,10 +87,5 @@ jobs:
           script: |
             set -euo pipefail
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-            cd /opt/soichose
-            docker compose -f docker-compose.prod.yml pull backend
-            docker compose -f docker-compose.prod.yml up -d --no-deps backend
-            docker image prune -f
-            sleep 4
-            curl -fsS http://127.0.0.1:4000/health
+            /opt/soichose/blue-green-deploy.sh backend "${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:sha-${{ github.sha }}"
 
