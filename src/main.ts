@@ -30,6 +30,7 @@ import { groupsRouter } from "./modules/groups";
 
 const app: Express = express();
 app.disable("x-powered-by");
+app.set("trust proxy", 1);
 const port = process.env.PORT || 4000;
 
 // Security Headers Middleware
